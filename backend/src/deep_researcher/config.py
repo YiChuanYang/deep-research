@@ -47,7 +47,7 @@ class Configuration(BaseModel):
         description="Directory for NoteTool to persist task notes",
     )
     fetch_full_page: bool = Field(
-        default=True,
+        default=False,
         title="Fetch Full Page",
         description="Include the full page content in the search results",
     )
