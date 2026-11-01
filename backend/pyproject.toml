@@ -40,6 +40,11 @@ where = ["src"]  # 在src目录下自动查找Python包（比如services）
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
 
+[tool.pytest.ini_options]
+pythonpath = ["src"]   # 把 src 加入 Python 搜索路径
+testpaths = ["tests"]  # 默认测试目录
+addopts = "-v"         # 默认显示详细输出
+
 [tool.ruff]
 lint.select = [
     "E",
@@ -63,3 +68,8 @@ lint.ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
