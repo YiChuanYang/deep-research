@@ -1,4 +1,4 @@
-from dataclasses import dataclass ,field
+from dataclasses import dataclass ,field #内部流转数据，使用dataclass 不用pydantic 减少开销
 from typing import List, Optional
 from typing_extensions import Annotated
 import operator
