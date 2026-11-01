@@ -1,0 +1,32 @@
+# ========== 后端 Python 相关 ==========
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.uv/
+.pytest_cache/
+.coverage
+.env
+.env.local
+*.log
+workspace/
+
+# ========== 前端 Node 相关 ==========
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ========== IDE & 通用 ==========
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,65 @@
+[project]
+name = "deep-researcher"
+version = "0.0.1"
+description = "Fully local web research and summarization assistant."
+authors = [
+    { name = "Yang" }
+]
+readme = "README.md"
+# 修复1：改为PEP639标准的SPDX字符串格式，消除废弃警告
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "hello-agents==0.2.9",
+    "tavily-python>=0.5.0",
+    "python-dotenv==1.0.1",
+    "requests>=2.31.0",
+    "openai>=1.12.0",
+    "uvicorn[standard]>=0.32.0",
+    "ddgs>=9.6.1",
+    "loguru>=0.7.3",
+]
+
+[project.optional-dependencies]
+dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
+
+[build-system]
+# 修复2：升级setuptools到支持新license格式的版本，移除多余的wheel依赖
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+# 修复3：修正包发现逻辑，适配你「src为源码根」的目录结构
+[tool.setuptools.package-dir]
+"" = "src"  # 声明：所有顶层包/模块都在 src 目录下
+
+[tool.setuptools.packages.find]
+where = ["src"]  # 在src目录下自动查找Python包（比如services）
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
+
+[tool.ruff]
+lint.select = [
+    "E",
+    "F",
+    "I",
+    "D",
+    "D401",
+    "T201",
+    "UP",
+]
+lint.ignore = [
+    "UP006",
+    "UP007",
+    "UP035",
+    "D417",
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D", "UP"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
