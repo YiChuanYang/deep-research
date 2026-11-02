@@ -3,6 +3,8 @@ from typing import Any,Dict,Optional,List
 from openai import OpenAI
 import os
 import logging
+from openai.types.chat import ChatCompletion
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,27 +41,41 @@ class MyLLM():
             api_key=self.api_key, 
             base_url=self.base_url, 
             timeout=self.timeout)
+
+
     def invoke(
             self,
-            messages:List[Dict[str,str]],
-            tools:Optional[List[Dict]]=None,
-            **kwargs)->Optional[str]:
-        """支持openai原生工具调用的invoke方法"""
+            messages:List[Dict[str,Any]],
+            tools:List[Dict[str,Any]]|None=None,
+            *,
+            tool_choice:str='auto',
+            **kwargs:Any)->ChatCompletion|None:
+        """invoke方法，支持原生工具调用"""
+        request = dict(kwargs)
+        if "temperature" not in request:
+            request['temperature'] = float(os.getenv("LLM_TEMPERATURE","0.0"))
+        if "max_tokens" not in request:
+              request["max_tokens"] = int(os.getenv("LLM_MAX_TOKENS", "4080"))
+        request.update(
+            model=self.model,
+            messages = messages,
+            stream = False,
+        )
+        if tools:
+            request['tools']=tools
+            request['tool_choice']=tool_choice
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                stream=False,
-                tools=tools,
-                tool_choice='auto' if tools else None,
-                temperature=kwargs.get('temperature',float(os.getenv("LLM_TEMPERATURE",0.0))),
-                max_tokens=kwargs.get('max_tokens',int(os.getenv('LLM_MAX_TOKENS',4080))),
-            ) # type: ignore
-            logger.info(f"[MyLLM]invoke成功,tool_choice={'auto' if tools else None}")
+            logger.info(f"正在等待模型响应，model={self.model}")
+            response = self.client.chat.completions.create(**request)
+            if not response.choices:
+                logger.error(f"❌[MyLLM]_invoke模型响应中无choice,response={response}")
+                raise ValueError(f"❌模型响应中无choice,response={response}")
+            logger.info(f"✅[MyLLM]_invoke模型响应成功，model={self.model}")
             return response
         except Exception as e:
-            logger.error(f"❌[MyLLM]invoke失败,tool_choice={'auto' if tools else None},错误信息:{e}")
+            logger.error(f"❌[MyLLM]_invoke模型响应失败，原因：{e}")
             return None
+
 
 
     def _auto_detect_provider(self)->str:
