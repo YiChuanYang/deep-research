@@ -41,7 +41,7 @@ class ToolAwareAgent(SimpleAgent):
         logger.info(f"✅[ToolAwareAgent]初始化成功,tool_call_listener={True if self.tool_call_listener else None}")
     def _execute_tool_call(self, call: Any) -> Message:
         """重写父类的execute_tool_call方法：执行工具+参数清洗+事件监听"""
-        tool_name = call.function.nam
+        tool_name = call.function.name
         tool_call_id = call.id
         raw_parameters = call.function.arguments
         logger.info(f"[ToolAwareAgent]execute_tool_call正在执行工具调用，tool_name={tool_name},tool_call_id={tool_call_id}")
@@ -67,7 +67,7 @@ class ToolAwareAgent(SimpleAgent):
             logger.info(f"✅[ToolAwareAgent]工具调用成功，tool_name={tool_name},tool_call_id={tool_call_id}")
         except Exception as e:
             success =False
-            logger.warning(f"❌[ToolAwareAgent]工具调用失败，tool_name={tool_name},tool_call_id={tool_call_id}，将返回失败原因")
+            logger.warning(f"❌[ToolAwareAgent]工具调用失败，tool_name={tool_name},tool_call_id={tool_call_id}，将返回失败原因{e}")
             result = json.dumps({
                 "error_type":type(e).__name__,
                 "error_message":str(e)

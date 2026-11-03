@@ -109,7 +109,7 @@ class SimpleAgent(Agent):
             else:
                 tool_choice = 'auto'
 
-            logger.info(f"进入第{iteration}次工具迭代，tool_choice={tool_choice}")
+            logger.info(f"🔧[SimpleAgent]run进入第{iteration}次工具迭代，tool_choice={tool_choice}")
 
             try:
                 response = self.llm.invoke(

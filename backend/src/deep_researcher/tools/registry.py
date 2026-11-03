@@ -1,6 +1,10 @@
 from deep_researcher.tools.base import Tool
 from typing import Callable,Dict,Any,Optional
 from copy import deepcopy
+import logging
+logger = logging.getLogger(__name__)
+
+
 class ToolRegistry:
     """
     工具注册表
@@ -34,7 +38,7 @@ class ToolRegistry:
             print(f"⚠️ 警告：工具 '{tool.name}' 已存在，将被覆盖。")
 
         self._tools[tool.name]=tool
-        print(f"✅ 工具 '{tool.name}' 已注册。")
+        logger.info(f"✅[ToolRegistry]registry_tool: 工具 '{tool.name}' 已注册。")
 
 
     def register_function(
@@ -58,6 +62,7 @@ class ToolRegistry:
               "func": func,
               "parameters": deepcopy(parameters),
           }
+          logger.info(f"✅[ToolRegistry]registry_function: 工具 '{name}' 已注册。")
 
     def unregister(self, name: str)->bool:
         """注销工具"""
