@@ -6,6 +6,7 @@ from deep_researcher.tools.registry import ToolRegistry
 from typing import Optional,Dict,Any,List
 import logging
 import json
+from openai.types.chat import ChatCompletionMessageFunctionToolCall
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +25,12 @@ class SimpleAgent(Agent):
         super().__init__(name,llm,sys_prompt,config)
         self.tool_registry = tool_registry 
         self.enable_tool_call = enable_tool_call and self.tool_registry is not None
-        logger.info(f"✅[SimpleAgent]初始化成功，llm_provider={self.llm.llm_provider},enable_tool_call={self.enable_tool_call}")
+        logger.info(
+            "🤖 Agent 已初始化：name=%s provider=%s tool_call=%s",
+            self.name,
+            self.llm.llm_provider,
+            self.enable_tool_call,
+        )
 
 
 
@@ -63,6 +69,12 @@ class SimpleAgent(Agent):
             content = result if isinstance(result,str) else json.dumps(result, ensure_ascii=False)
 
         except Exception as e:
+            logger.exception(
+                "❌ Agent 工具调用失败：tool=%s call_id=%s error_type=%s",
+                name,
+                tool_call_id,
+                type(e).__name__,
+            )
             content = f"工具调用失败,失败原因：{e}"
 
         return Message(
@@ -109,7 +121,13 @@ class SimpleAgent(Agent):
             else:
                 tool_choice = 'auto'
 
-            logger.info(f"🔧[SimpleAgent]run进入第{iteration}次工具迭代，tool_choice={tool_choice}")
+            logger.info(
+                "🔄 Agent 迭代开始：agent=%s iteration=%d tool_choice=%s tools=%d",
+                self.name,
+                iteration,
+                tool_choice,
+                len(schemas),
+            )
 
             try:
                 response = self.llm.invoke(
@@ -119,29 +137,63 @@ class SimpleAgent(Agent):
                     **options
                 )
                 if response is None or response.choices is None:
-                    logger.error("❌[SimpleAgent]run:模型响应为空")
-                    raise ValueError("模型响应为空") 
+                    raise ValueError("模型响应为空")
                 choice = response.choices[0]
 
             except Exception as e:
+                logger.exception(
+                    "❌ Agent 模型请求失败：agent=%s iteration=%d error_type=%s",
+                    self.name,
+                    iteration,
+                    type(e).__name__,
+                )
                 return f"❌[SimpleAgent]run响应失败，e={e}"
 
             message = choice.message
-            calls = message.tool_calls
+            all_calls = message.tool_calls or []
+            calls = [
+                call
+                for call in all_calls
+                if isinstance(call, ChatCompletionMessageFunctionToolCall)
+            ]
+            unsupported_call_count = len(all_calls) - len(calls)
+            if unsupported_call_count:
+                logger.warning(
+                    "⚠️ Agent 收到不支持的工具调用：agent=%s iteration=%d count=%d",
+                    self.name,
+                    iteration,
+                    unsupported_call_count,
+                )
+
             #没有工具调用直接返回文本
             if not calls:
-                logger.warning(f"[SimplAgent]run:本次模型返回无tool_call,iteration={iteration},提前返回结果:{"是" if iteration<+max_tool_iterations else "否"}")
                 text = message.content or message.refusal
                 if not isinstance(text, str) or not text.strip():
                       raise RuntimeError(
                           "模型没有返回文本或工具调用"
                       )
 
+                logger.info(
+                    "✅ Agent 运行完成：agent=%s iteration=%d response_chars=%d",
+                    self.name,
+                    iteration,
+                    len(text),
+                )
+
                 self.add_message(
                       Message(role="assistant", content=text)
                   )
 
                 return text
+
+            tool_names = [call.function.name for call in calls]
+            logger.info(
+                "🧰 Agent 收到工具调用：agent=%s iteration=%d count=%d tools=%s",
+                self.name,
+                iteration,
+                len(calls),
+                tool_names,
+            )
 
             #保存工具调用消息
             self.add_message(Message(
@@ -160,8 +212,22 @@ class SimpleAgent(Agent):
             )
             
             for call in calls:
+                logger.info(
+                    "🔧 Agent 执行工具：agent=%s iteration=%d tool=%s call_id=%s",
+                    self.name,
+                    iteration,
+                    call.function.name,
+                    call.id,
+                )
                 observation = self._execute_tool_call(call)
                 self.add_message(observation)
+
+        logger.warning(
+            "⚠️ Agent 达到工具迭代上限：agent=%s max_iterations=%d",
+            self.name,
+            max_tool_iterations,
+            )
+        return "工具调用迭代已达到上限，未获得最终答复"
            
 
 

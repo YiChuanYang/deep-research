@@ -5,7 +5,6 @@ import os
 import logging
 from openai.types.chat import ChatCompletion
 
-
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -22,15 +21,24 @@ class MyLLM():
         if provider:
             self.llm_provider = provider
             if not all([api_key, base_url, model]):
-                logger.warning(f"[MyLLM]自定义provider参数不全，provider={self.llm_provider}，将从环境中尝试补全")
+                logger.warning(
+                    "⚠️ 自定义 provider 配置不完整，尝试从环境变量补全：provider=%s",
+                    self.llm_provider,
+                )
                 api_key, base_url, model =self._resolve_credentials() # type: ignore
                 if not all([api_key, base_url, model]):
-                    logger.error(f"[MyLLM]自定义provider参数不全，且环境中未找到完整的凭证信息，provider={self.llm_provider}，请检查配置")
+                    logger.error(
+                        "❌ provider 凭证不完整且环境变量中未找到配置：provider=%s",
+                        self.llm_provider,
+                    )
                     raise ValueError(f"[MyLLM]自定义provider参数不全，且环境中未找到完整的凭证信息，provider={self.llm_provider}，请检查配置")
 
         else:
             self.llm_provider = self._auto_detect_provider() or "zhipu"
-            logger.info(f"[MyLLM]自动检测到provider={self.llm_provider}，将尝试从环境中获取凭证信息")
+            logger.info(
+                "🔌 已选择 LLM provider：%s，正在读取环境配置",
+                self.llm_provider,
+            )
             api_key, base_url, model =self._resolve_credentials() # type: ignore
         self.api_key = api_key  
         self.base_url = base_url
@@ -41,7 +49,6 @@ class MyLLM():
             api_key=self.api_key, 
             base_url=self.base_url, 
             timeout=self.timeout)
-
 
     def invoke(
             self,
@@ -58,23 +65,49 @@ class MyLLM():
               request["max_tokens"] = int(os.getenv("LLM_MAX_TOKENS", "4080"))
         request.update(
             model=self.model,
-            messages = messages,
-            stream = False,
+            messages=messages,
+            stream=False,
         )
         if tools:
-            request['tools']=tools
-            request['tool_choice']=tool_choice
+            request["tools"] = tools
+            request["tool_choice"] = tool_choice
+
+        logger.info(
+            "📤 LLM 请求开始：provider=%s model=%s messages=%d tools=%d tool_choice=%s",
+            self.llm_provider,
+            self.model,
+            len(messages),
+            len(tools or []),
+            request.get("tool_choice", "none"),
+        )
+
         try:
-            logger.info(f"正在等待模型响应，model={self.model}")
             response = self.client.chat.completions.create(**request)
+
             if not response.choices:
-                logger.error(f"❌[MyLLM]_invoke模型响应中无choice,response={response}")
-                raise ValueError(f"❌模型响应中无choice,response={response}")
-            logger.info(f"✅[MyLLM]_invoke模型响应成功，model={self.model}")
-            return response
-        except Exception as e:
-            logger.error(f"❌[MyLLM]_invoke模型响应失败，原因：{e}")
+                raise ValueError("模型响应中没有 choices")
+
+        except Exception as exc:
+            logger.exception(
+                "❌ LLM 请求失败：provider=%s model=%s error_type=%s",
+                self.llm_provider,
+                self.model,
+                type(exc).__name__,
+            )
             return None
+
+        usage = getattr(response, "usage", None)
+        logger.info(
+            "✅ LLM 响应完成：model=%s choices=%d tool_calls=%d tokens=%s",
+            getattr(response, "model", self.model),
+            len(response.choices),
+            sum(
+                len(choice.message.tool_calls or [])
+                for choice in response.choices
+            ),
+            getattr(usage, "total_tokens", None),
+        )
+        return response
 
 
 

@@ -24,6 +24,12 @@ def dispatch_search(
 
     search_api = get_config_value(config.search_api)
 
+    logger.info(
+        "🔎 搜索开始：backend=%s loop=%d query_chars=%d max_results=5",
+        search_api,
+        loop_count,
+        len(query),
+    )
     try:
         raw_response = _GLOBAL_SEARCH_TOOL.run(
             {
@@ -37,12 +43,21 @@ def dispatch_search(
             }
         )
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Search backend %s failed: %s", search_api, exc)
+        logger.exception(
+            "❌ 搜索失败：backend=%s error_type=%s",
+            search_api,
+            type(exc).__name__,
+        )
         raise
 
+    notices: list[str] = []
     if isinstance(raw_response, str):
-        notices = [raw_response]
-        logger.warning("Search backend %s returned text notice: %s", search_api, raw_response)
+        notices.append(raw_response)
+        logger.warning(
+            "⚠️ 搜索后端返回提示：backend=%s loop=%d",
+            search_api,
+            loop_count,
+        )
         payload: dict[str, Any] = {
             "results": [],
             "backend": search_api,
@@ -51,22 +66,28 @@ def dispatch_search(
         }
     else:
         payload = raw_response
-        notices = list(payload.get("notices") or [])
+        notices.extend(
+            notice
+            for notice in payload.get("notices") or []
+            if isinstance(notice, str)
+        )
 
     backend_label = str(payload.get("backend") or search_api)
     answer_text = payload.get("answer")
     results = payload.get("results", [])
 
-    if notices:
-        for notice in notices:
-            logger.info("Search notice (%s): %s", backend_label, notice)
-
+    if notices and not isinstance(raw_response, str):
+        logger.warning(
+            "⚠️ 搜索结果包含提示：backend=%s notice_count=%d",
+            backend_label,
+            len(notices),
+        )
     logger.info(
-        "Search backend=%s resolved_backend=%s answer=%s results=%s",
+        "✅ 搜索完成：backend=%s resolved_backend=%s results=%d has_answer=%s",
         search_api,
         backend_label,
-        bool(answer_text),
         len(results),
+        bool(answer_text),
     )
 
     return payload, notices, answer_text, backend_label
@@ -88,5 +109,12 @@ def prepare_research_context(
 
     if answer_text:
         context = f"AI直接答案：\n{answer_text}\n\n{context}"
+
+    logger.info(
+        "🧩 搜索上下文整理完成：sources=%d summary_chars=%d context_chars=%d",
+        len((search_result or {}).get("results", [])),
+        len(sources_summary),
+        len(context),
+    )
 
     return sources_summary, context

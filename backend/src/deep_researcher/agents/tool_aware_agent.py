@@ -30,7 +30,7 @@ class ToolAwareAgent(SimpleAgent):
                 config:Optional[Configuration]=None,
                 tool_registry:Optional[ToolRegistry]=None,
                 enable_tool_call:bool=False,
-                tool_call_listener:Optional[Callable[Dict[str,Any],None]]=None)->None:
+                tool_call_listener:Optional[Callable[[Dict[str,Any]],None]]=None)->None:
         """初始化 ToolAwareSimpleAgent。
 
                 Args:
@@ -38,14 +38,19 @@ class ToolAwareAgent(SimpleAgent):
                 """
         super().__init__(name,llm,sys_prompt,config,tool_registry,enable_tool_call)
         self.tool_call_listener = tool_call_listener
-        logger.info(f"✅[ToolAwareAgent]初始化成功,tool_call_listener={True if self.tool_call_listener else None}")
+        logger.info(
+            "👂 ToolAwareAgent 监听器状态：agent=%s enabled=%s",
+            self.name,
+            self.tool_call_listener is not None,
+        )
+
     def _execute_tool_call(self, call: Any) -> Message:
         """重写父类的execute_tool_call方法：执行工具+参数清洗+事件监听"""
         tool_name = call.function.name
         tool_call_id = call.id
         raw_parameters = call.function.arguments
-        logger.info(f"[ToolAwareAgent]execute_tool_call正在执行工具调用，tool_name={tool_name},tool_call_id={tool_call_id}")
-        success =True
+        success = True
+        clean_parameters: Dict[str, Any] = {}
 
         try:
             #解析并清洗参数
@@ -55,6 +60,13 @@ class ToolAwareAgent(SimpleAgent):
             #执行工具
             if self.tool_registry is None:
                 raise ValueError("工具表未注册")
+            logger.info(
+                "🔧 工具调用开始：agent=%s tool=%s call_id=%s parameters=%d",
+                self.name,
+                tool_name,
+                tool_call_id,
+                len(clean_parameters),
+            )
             observation = self.tool_registry.execute_tool(
                 name=tool_name,
                 parameters=clean_parameters)
@@ -64,10 +76,22 @@ class ToolAwareAgent(SimpleAgent):
                 observation if isinstance(observation,str)
                 else json.dumps(observation,ensure_ascii=False)
             )
-            logger.info(f"✅[ToolAwareAgent]工具调用成功，tool_name={tool_name},tool_call_id={tool_call_id}")
+            logger.info(
+                "✅ 工具调用完成：agent=%s tool=%s call_id=%s result_chars=%d",
+                self.name,
+                tool_name,
+                tool_call_id,
+                len(result),
+            )
         except Exception as e:
-            success =False
-            logger.warning(f"❌[ToolAwareAgent]工具调用失败，tool_name={tool_name},tool_call_id={tool_call_id}，将返回失败原因{e}")
+            success = False
+            logger.exception(
+                "❌ 工具调用失败：agent=%s tool=%s call_id=%s error_type=%s",
+                self.name,
+                tool_name,
+                tool_call_id,
+                type(e).__name__,
+            )
             result = json.dumps({
                 "error_type":type(e).__name__,
                 "error_message":str(e)
@@ -86,9 +110,19 @@ class ToolAwareAgent(SimpleAgent):
 
             try:
                 self.tool_call_listener(event)
-                logger.info(f"✅[ToolAwareAgent]工具监听成功，tool_name={tool_name},tool_call_id={tool_call_id}")
+                logger.debug(
+                    "🪝 工具监听器处理完成：agent=%s tool=%s call_id=%s",
+                    self.name,
+                    tool_name,
+                    tool_call_id,
+                )
             except Exception as e:
-                logger.info(f"❌[ToolAwareAgent]工具监听失败，tool_name={tool_name},tool_call_id={tool_call_id}")
+                logger.exception(
+                    "⚠️ 工具监听器执行失败：agent=%s tool=%s call_id=%s",
+                    self.name,
+                    tool_name,
+                    tool_call_id,
+                )
             
         return Message(
             role="tool",
@@ -97,17 +131,12 @@ class ToolAwareAgent(SimpleAgent):
         )
  
     @staticmethod
-    def _sanitize_parameters(parameters:Dict[str,Any])->Dict[str,Any]:
-        """对参数进行清洗，目前暂时处理空值默认和字符串去空格"""
-        sanitized :Dict[str,Any]={}
-        for key,value in parameters.items():
-            if value is None:
-                sanitized[key]=value
-                continue
-            if isinstance(value,str):
-                sanitized[key]=value.strip()
-
-        return sanitized
+    def _sanitize_parameters(
+        parameters: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+          key: value.strip() if isinstance(value, str) else value
+          for key, value in parameters.items()}
 
     @staticmethod
     def attach_registry(

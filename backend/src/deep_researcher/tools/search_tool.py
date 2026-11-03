@@ -62,6 +62,12 @@ class SearchTool(Tool):
               raise NotImplementedError("当前版本尚未实现网页全文抓取")
 
           # 6. 获取搜索引擎的原始返回值
+          logger.info(
+              "🔎 搜索工具开始：backend=%s query_chars=%d max_results=%d",
+              backend,
+              len(query),
+              max_results,
+          )
           entries = self._search_duckduckgo(
               query=query,
               max_results=max_results,
@@ -69,6 +75,12 @@ class SearchTool(Tool):
 
           # 7. 转换字段，并记录不完整结果的处理提示
           results, notices = self._normalize_results(entries)
+          logger.info(
+              "✅ 搜索工具完成：backend=%s results=%d notices=%d",
+              backend,
+              len(results),
+              len(notices),
+          )
 
           return {
               "results": results,
@@ -82,15 +94,33 @@ class SearchTool(Tool):
             query:str,
             max_results:int=10)->List[Dict[str,Any]]:
         """使用 DuckDuckGo 搜索"""
+        logger.debug(
+            "🌐 搜索引擎请求：backend=%s query_chars=%d max_results=%d",
+            self.backend,
+            len(query),
+            max_results,
+        )
         try:
-            logger.info(f"🔍开始搜索：query={query}, backend={self.backend}, max_results={max_results}")
             with DDGS(timeout=self.timeout) as client:
-                logger.info(f"✅搜索成功：query={query}, backend={self.backend}")
-                return client.text(query,backend=self.backend,max_results=max_results)
-            
-        except DDGSException as e:
-            logger.error(f"❌搜索失败：query={query}, backend={self.backend}, error={e}")
-            raise RuntimeError(f"搜索失败：{e}")
+                entries = client.text(
+                    query,
+                    backend=self.backend,
+                    max_results=max_results,
+                )
+            logger.debug(
+                "🌐 搜索引擎返回：backend=%s results=%d",
+                self.backend,
+                len(entries),
+            )
+            return entries
+
+        except DDGSException as exc:
+            logger.exception(
+                "❌ 搜索引擎请求失败：backend=%s error_type=%s",
+                self.backend,
+                type(exc).__name__,
+            )
+            raise RuntimeError(f"搜索失败：{exc}") from exc
 
     @staticmethod
     def _normalize_results(entries: List[Dict[str,Any]])->tuple[List[Dict[str,Any]],list[str]]:

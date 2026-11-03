@@ -65,23 +65,36 @@ class PlanningService:
 
         def capture_tasks(event:Dict):
             """临时监听器，临时替换agent自带的监听器"""
-            #声明变量
             nonlocal parsed_tasks
             try:
-                 args = json.loads(event["raw_parameters"])
-                 parsed_tasks = args.get("tasks",[])
-            except Exception :
-                pass
+                args = json.loads(event["raw_parameters"])
+                parsed_tasks = args.get("tasks",[])
+            except Exception as exc:
+                logger.exception(
+                    "⚠️ 规划任务解析失败：error_type=%s",
+                    type(exc).__name__,
+                )
 
         #临时挂载监听器
         original_listener = self._agent.tool_call_listener
         self._agent.tool_call_listener = capture_tasks
 
         try:
+            logger.info(
+                "🧭 开始生成研究计划：agent=%s topic_chars=%d",
+                self._agent.name,
+                len(state.research_topic or ""),
+            )
             self._agent.run(
                 input_text=prompt,
                 tool_choice="required"
             )
+        except Exception as exc:
+            logger.exception(
+                "❌ 研究计划生成失败：error_type=%s",
+                type(exc).__name__,
+            )
+            raise
 
         finally:
             self._agent.tool_call_listener = original_listener
@@ -99,13 +112,20 @@ class PlanningService:
             )
 
         # 极端情况兜底
-        if not todo_items:
-            logger.warning("规划工具调用解析失败，使用兜底任务")
+        used_fallback = not todo_items
+        if used_fallback:
+            logger.warning(
+                "⚠️ 未获取到规划任务，使用兜底任务：topic_chars=%d",
+                len(state.research_topic or ""),
+            )
             todo_items.append(self.create_fallback_task(state))
 
         state.todo_items = todo_items
-        titles = [task.title for task in todo_items]
-        logger.info("规划器生成 %d 个任务：%s", len(todo_items), titles)
+        logger.info(
+            "✅ 研究计划生成完成：task_count=%d fallback=%s",
+            len(todo_items),
+            used_fallback,
+        )
         return todo_items
 
     @staticmethod

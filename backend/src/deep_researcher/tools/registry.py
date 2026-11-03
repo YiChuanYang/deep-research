@@ -27,18 +27,33 @@ class ToolRegistry:
         if auto_expandable and tool.expandable:
             expanded_tools = tool.get_expanded_tools()
             if expanded_tools is not None:
-                print(f"✅ 正在展开子工具，共有{len(expanded_tools)}个子工具")
+                replaced_count = 0
                 for sub_tool in expanded_tools:
                     if sub_tool in self._tools:
-                        print(f"⚠️ 警告：工具 '{sub_tool.name}' 已存在，将被覆盖。")
+                        replaced_count += 1
+                        logger.warning(
+                            "⚠️ 工具已存在，将覆盖：tool=%s",
+                            sub_tool.name,
+                        )
                     self._tools[sub_tool.name]=sub_tool
-                print(f"✅ 工具 '{tool.name}' 已展开为 {len(expanded_tools)} 个独立工具")
+                logger.info(
+                    "🧰 工具组已展开：tool=%s count=%d replaced=%d",
+                    tool.name,
+                    len(expanded_tools),
+                    replaced_count,
+                )
                 return 
         if tool.name in self._tools:
-            print(f"⚠️ 警告：工具 '{tool.name}' 已存在，将被覆盖。")
+            logger.warning(
+                "⚠️ 工具已存在，将覆盖：tool=%s",
+                tool.name,
+            )
 
         self._tools[tool.name]=tool
-        logger.info(f"✅[ToolRegistry]registry_tool: 工具 '{tool.name}' 已注册。")
+        logger.info(
+            "🧰 工具已注册：tool=%s type=tool",
+            tool.name,
+        )
 
 
     def register_function(
@@ -62,20 +77,32 @@ class ToolRegistry:
               "func": func,
               "parameters": deepcopy(parameters),
           }
-          logger.info(f"✅[ToolRegistry]registry_function: 工具 '{name}' 已注册。")
+          logger.info(
+              "🧰 工具已注册：tool=%s type=function",
+              name,
+          )
 
     def unregister(self, name: str)->bool:
         """注销工具"""
         if name in self._tools:
             del self._tools[name]
-            print(f"🗑️ 工具 '{name}' 已注销。")
+            logger.info(
+                "🗑️ 工具已注销：tool=%s",
+                name,
+            )
             return True
         elif name in self._functions:
             del self._functions[name]
-            print(f"🗑️ 工具 '{name}' 已注销。")
+            logger.info(
+                "🗑️ 工具已注销：tool=%s",
+                name,
+            )
             return True
         else:
-            print(f"⚠️ 工具'{name}' 不存在。")
+            logger.warning(
+                "⚠️ 注销失败，工具不存在：tool=%s",
+                name,
+            )
             return False
         
     def get_tool(self, name: str) -> Optional[Tool]:
@@ -95,23 +122,38 @@ class ToolRegistry:
           parameters: dict[str, Any],
       ) -> Any:
           """保留原始返回值，让异常交给 Agent 处理。"""
-          if not isinstance(parameters, dict):
-              raise TypeError("parameters 必须是字典")
+          parameter_count = len(parameters) if isinstance(parameters, dict) else 0
+          logger.info(
+              "🔧 工具执行开始：tool=%s parameters=%d",
+              name,
+              parameter_count,
+          )
+          try:
+              if not isinstance(parameters, dict):
+                  raise TypeError("parameters 必须是字典")
 
-          tool = self._tools.get(name)
+              tool = self._tools.get(name)
 
-          if tool is not None:
-              if not tool.validate_parameters(parameters):
-                  raise ValueError(f"工具 {name} 缺少必填参数")
+              if tool is not None:
+                  if not tool.validate_parameters(parameters):
+                      raise ValueError(f"工具 {name} 缺少必填参数")
+                  result = tool.run(parameters)
+              else:
+                  info = self._functions.get(name)
+                  if info is None:
+                      raise KeyError(f"未注册工具：{name}")
+                  result = info["func"](**parameters)
 
-              return tool.run(parameters)
+          except Exception:
+              logger.exception("❌ 工具执行失败：tool=%s", name)
+              raise
 
-          info = self._functions.get(name)
-
-          if info is not None:
-              return info["func"](**parameters)
-
-          raise KeyError(f"未注册工具：{name}")
+          logger.info(
+              "✅ 工具执行完成：tool=%s result_type=%s",
+              name,
+              type(result).__name__,
+          )
+          return result
 
     def get_openai_tools(self) -> list[dict[str, Any]]:
           """返回两类工具的原生function calling 定义"""
@@ -160,6 +202,10 @@ class ToolRegistry:
 
     def clear(self):
         """清空所有工具"""
+        tool_count = len(self._tools) + len(self._functions)
         self._tools.clear()
         self._functions.clear()
-        print("🧹 所有工具已清空。")
+        logger.info(
+            "🧹 工具注册表已清空：removed=%d",
+            tool_count,
+        )

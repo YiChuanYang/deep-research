@@ -38,7 +38,7 @@ def deduplicate_and_format_sources(
             unique_sources[url] = source
 
     formatted_parts  = []
-    for source in unique_sources.values():
+    for source_index, source in enumerate(unique_sources.values(), start=1):
         title = source.get("title") or source.get("url")
         content = source.get("content") or ""
         formatted_parts.append(f"信息来源:{title}\n\n")
@@ -48,7 +48,10 @@ def deduplicate_and_format_sources(
         if fetch_full_page:
             raw_content = source.get("raw_content")
             if raw_content is None:
-                logger.debug("raw_content missing for %s", source.get("url", ""))
+                logger.debug(
+                    "🗂️ 搜索来源缺少全文，跳过：source_index=%d",
+                    source_index,
+                )
                 raw_content = ""
             char_limit = max_tokens_per_source * CHARS_PER_TOKEN
             if len(raw_content) > char_limit:
