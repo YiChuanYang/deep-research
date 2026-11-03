@@ -2,16 +2,22 @@ from __future__ import annotations
 from typing import Any, Optional, List, Dict
 from ddgs import DDGS
 from ddgs.exceptions import DDGSException
+from deep_researcher.tools.base import ToolParameter,Tool
 import logging 
 logger = logging.getLogger(__name__)
 
 
-class SearchTool:
+class SearchTool(Tool):
     """搜索工具：执行搜索，统一结果格式"""
     def __init__(
             self,
+            name:str="search_tool",
+            description:str="搜索工具，执行搜索",
             backend:str="duckduckgo",
             timeout:int=10)->None:
+    
+        super().__init__(name=name,description = description)
+    
         if not isinstance(timeout,int) or timeout<=0:
             raise ValueError("timeout 必须是正整数")
         self.backend = backend
@@ -79,8 +85,9 @@ class SearchTool:
         try:
             logger.info(f"🔍开始搜索：query={query}, backend={self.backend}, max_results={max_results}")
             with DDGS(timeout=self.timeout) as client:
+                logger.info(f"✅搜索成功：query={query}, backend={self.backend}")
                 return client.text(query,backend=self.backend,max_results=max_results)
-            logger.info(f"✅搜索成功：query={query}, backend={self.backend}")
+            
         except DDGSException as e:
             logger.error(f"❌搜索失败：query={query}, backend={self.backend}, error={e}")
             raise RuntimeError(f"搜索失败：{e}")
@@ -112,6 +119,23 @@ class SearchTool:
                 'content':content,
             })
         return results,notices
+    def get_parameters(self) -> List[ToolParameter]:
+        """获取工具参数定义"""
+        return [
+            ToolParameter(
+                name="input",
+                type="string",
+                description="搜索工具，输入查询，通过搜索引擎搜索结果。",
+                required=True,
+            ),
+            ToolParameter(
+                name="max_results",
+                type="integer",
+                description="控制搜索引擎搜索结果的数量上限。",
+                required=False,
+                default=5
+            )
+        ]
     
 
             
