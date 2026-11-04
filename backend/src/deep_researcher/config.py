@@ -26,13 +26,18 @@ class Configuration(BaseModel):
         title="Local Model Name",
         description="Name of the locally hosted LLM (Ollama/LMStudio)",
     )
+    tavily_api_key :Optional[str]= Field(
+        default=None,
+        title="Search API Key",
+        description="",
+    )
     llm_provider: str = Field(
         default="ollama",
         title="LLM Provider",
         description="Provider identifier (ollama, lmstudio, or custom)",
     )
     search_api: SearchAPI = Field(
-        default=SearchAPI.DUCKDUCKGO,
+        default=SearchAPI.TAVILY,
         title="Search API",
         description="Web search API to use",
     )
@@ -113,6 +118,7 @@ class Configuration(BaseModel):
             "strip_thinking_tokens": os.getenv("STRIP_THINKING_TOKENS"),
             "use_tool_calling": os.getenv("USE_TOOL_CALLING"),
             "search_api": os.getenv("SEARCH_API"),
+            "tavily_api_key":os.getenv("TAVILY_API_KEY"),
             "enable_notes": os.getenv("ENABLE_NOTES"),
             "notes_workspace": os.getenv("NOTES_WORKSPACE"),
         }
@@ -140,3 +146,16 @@ class Configuration(BaseModel):
         """Best-effort resolution of the model identifier to use."""
 
         return self.llm_model_id or self.local_llm
+
+# 全局缓存
+_config_instance: Optional[Configuration] = None
+
+def get_config() -> Configuration:
+    """获取全局唯一的配置实例（懒加载单例）"""
+    global _config_instance
+    if _config_instance is None:
+        # 自动加载 .env + 从环境变量生成
+        from dotenv import load_dotenv
+        load_dotenv()
+        _config_instance = Configuration.from_env()
+    return _config_instance

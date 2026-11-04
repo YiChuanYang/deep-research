@@ -13,12 +13,12 @@ from deep_researcher.utils import (
 logger = logging.getLogger(__name__)
 
 MAX_TOKENS_PER_SOURCE = 2000
-_GLOBAL_SEARCH_TOOL = SearchTool(backend="duckduckgo")
+_GLOBAL_SEARCH_TOOL = SearchTool()
 
 def dispatch_search(
     query: str,
     config: Configuration,
-    loop_count: int,
+    loop_count: int=3,
 ) -> Tuple[dict[str, Any] | None, list[str], Optional[str], str]:
     """Execute configured search backend and normalise response payload."""
 
@@ -95,8 +95,7 @@ def dispatch_search(
 
 def prepare_research_context(
     search_result: dict[str, Any] | None,
-    answer_text: Optional[str],
-    config: Configuration,
+    answer_text: Optional[str]=None,
 ) -> tuple[str, str]:
     """Build structured context and source summary for downstream agents."""
 
@@ -104,7 +103,6 @@ def prepare_research_context(
     context = deduplicate_and_format_sources(
         search_result or {"results": []},
         max_tokens_per_source=MAX_TOKENS_PER_SOURCE,
-        fetch_full_page=config.fetch_full_page,
     )
 
     if answer_text:
