@@ -5,6 +5,7 @@ from typing import Callable,Optional
 from deep_researcher.config import Configuration
 import logging 
 from deep_researcher.utils import strip_thinking_tokens
+from deep_researcher.services.note_guidance import build_note_guidance
 
 
 logger = logging.getLogger(__name__)
@@ -42,10 +43,11 @@ class SumarizationService:
 
     def _build_prompt(self,state:SummaryState,task: TodoItem,context:str)->str:
         """构建总结提示词"""
-        return summarizer_running_prompt.format(
-            research_topic=state.research_topic,
-            title = task.title,
-            intent = task.intent,
-            query=task.query,
-            context=context
-        )
+        summary_prompt = summarizer_running_prompt.format(
+        research_topic=state.research_topic,
+        title=task.title,
+        intent=task.intent,
+        query=task.query,
+        context=context,
+    )
+        return f"{summary_prompt}\n\n{build_note_guidance(task)}"

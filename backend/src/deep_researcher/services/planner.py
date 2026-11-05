@@ -26,7 +26,11 @@ class PlanningService:
 
     def _init_planner_tool(self)->None:
         """注册虚拟工具，动态挂载到agent上"""
-        registry = ToolRegistry()
+        registry = self._agent.tool_registry
+        if registry is None:
+            registry = ToolRegistry()
+
+        ToolAwareAgent.attach_registry(self._agent, registry)
         registry.register_function(
             name="generate_research_tasks",
             description="生成结构化的调研子任务列表，必须调用此工具输出结果。",
@@ -51,9 +55,6 @@ class PlanningService:
                 "required": ["tasks"]
             }
         )
-        #挂载到agent
-        ToolAwareAgent.attach_registry(self._agent,registry)
-
     def plan_todo_list(self,state:SummaryState)->List[TodoItem]:
         """通过监听器捕捉结构化参数，构造todoitem"""
         #拼接运行时提示词
@@ -77,8 +78,13 @@ class PlanningService:
 
         #临时挂载监听器
         original_listener = self._agent.tool_call_listener
-        self._agent.tool_call_listener = capture_tasks
 
+        def capture_and_forward(event: Dict):
+            capture_tasks(event)
+            if original_listener is not None:
+                original_listener(event)
+
+        self._agent.tool_call_listener = capture_and_forward
         try:
             logger.info(
                 "🧭 开始生成研究计划：agent=%s topic_chars=%d",
