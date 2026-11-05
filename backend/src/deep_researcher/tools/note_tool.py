@@ -1,153 +1,247 @@
-from deep_researcher.tools.base import Tool,ToolParameter
+"""提供结构化返回值和原子文件写入的笔记工具."""
 
-from typing import Optional,List,Dict,Any
+from __future__ import annotations
 
-import logging
-from deep_researcher.config import Configuration, get_config
-logger = logging.getLogger(__name__)
-from pathlib import Path
-import uuid
 import json
+import logging
+import re
+import uuid
+from pathlib import Path
+from threading import RLock
+from typing import Any, Literal, TypedDict, cast
+
+from deep_researcher.config import Configuration, get_config
+from deep_researcher.tools.base import Tool, ToolParameter
+
+logger = logging.getLogger(__name__)
+
+NoteAction = Literal["create", "read", "update"]
 
 
+class NoteRecord(TypedDict):
+    """笔记文件中保存的字段."""
 
+    note_id: str
+    task_id: int | None
+    title: str
+    note_type: str
+    tags: list[str]
+    content: str
+
+
+class NoteResult(NoteRecord):
+    """返回给 Agent、监听器或服务层的笔记结果."""
+
+    action: NoteAction
+    note_path: str
 
 
 class NoteTool(Tool):
-    def __init__(
-            self,
-            name="note",
-            description="笔记工具，支持创建、读取和修改笔记",
-            config:Optional[Configuration]=None
-    )->None:
-        super().__init__(name,description)
-        self._config = config or get_config()
-        self._workspace = Path(self._config.notes_workspace)
-        self._workspace.mkdir(parents=True,exist_ok=True)
+    """创建、读取和更新笔记，支持追加记录与替换完整正文."""
 
-        logger.info(f"✅[NoteTool]初始化成功，笔记存储于{self._workspace}")
-    def run(self, parameters: dict[str, Any]) -> str:
-        """统一入口，根据 action 分发到对应动作"""
+    def __init__(
+        self,
+        name: str = "note",
+        description: str = "笔记工具，支持创建、读取和修改笔记",
+        config: Configuration | None = None,
+    ) -> None:
+        """初始化配置、存储目录和同一实例的读写锁."""
+        super().__init__(name, description)
+        self._config = config or get_config()
+        self._workspace = Path(self._config.notes_workspace).resolve()
+        self._workspace.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
+        logger.info(
+            "📝 笔记工具已初始化：workspace=%s",
+            self._workspace,
+        )
+
+    def run(self, parameters: dict[str, Any]) -> NoteResult:
+        """校验参数、执行读写，返回包含任务关联的完整笔记."""
         if not isinstance(parameters, dict):
-            raise ValueError("parameters 必须是字典")
+            raise TypeError("parameters 必须是字典")
 
         action = parameters.get("action")
         if action not in ("create", "read", "update"):
-            raise ValueError(f"不支持的 action：{action}，可选值：create / read / update")
+            raise ValueError("action 必须是 create/read/update")
 
-        if action == "create":
-            return self._create(parameters)
-        elif action == "read":
-            return self._read(parameters)
-        else:
-            return self._update(parameters)
-
-        
-    def _create(self,params:Dict[str,Any])->str:
-        """创建笔记"""
-        task_id = params.get("task_id","unknown_id")
-        title = str(params.get("title","未命名笔记")).strip()
-        note_type = str(params.get("note_type", "task_state")).strip()
-        tags = params.get("tags", ["deep_research"])
-        content = str(params.get("content", "")).strip()
-
-        note_id = f"note_{uuid.uuid4().hex[:12]}"
-        note_data = {
-            "note_id": note_id,
-            "task_id": task_id,
-            "title": title,
-            "note_type": note_type,
-            "tags": tags,
-            "content": content,
-        }
-        file_path = self._workspace/f"{note_id}.json"
-
+        logger.info(
+            "📝 笔记操作开始：action=%s note_id=%s task_id=%s",
+            action,
+            parameters.get("note_id"),
+            parameters.get("task_id"),
+        )
         try:
-            file_path.write_text(
-                json.dumps(note_data,ensure_ascii=False,indent=2),
+            # 同一个工具实例上的读取、修改和保存保持连续。
+            with self._lock:
+                if action == "create":
+                    data = self._create(parameters)
+                elif action == "read":
+                    data = self._read(parameters.get("note_id"))
+                else:
+                    data = self._update(parameters)
+
+                result: NoteResult = {
+                    **data,
+                    "action": cast(NoteAction, action),
+                    "note_path": str(self._note_path(data["note_id"])),
+                }
+        except FileNotFoundError:
+            logger.warning(
+                "⚠️ 笔记文件不存在：action=%s note_id=%s",
+                action,
+                parameters.get("note_id"),
+            )
+            raise
+        except Exception:
+            logger.exception(
+                "❌ 笔记操作失败：action=%s note_id=%s",
+                action,
+                parameters.get("note_id"),
+            )
+            raise
+
+        logger.info(
+            "✅ 笔记操作完成：action=%s note_id=%s task_id=%s "
+            "mode=%s content_chars=%d path=%s",
+            action,
+            result["note_id"],
+            result["task_id"],
+            parameters.get("mode", "append") if action == "update" else "-",
+            len(result["content"]),
+            result["note_path"],
+        )
+        return result
+
+    @staticmethod
+    def _require_text(value: object, field: str) -> str:
+        """校验必填文本，拒绝 None、空字符串及非文本值."""
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field} 必须是非空字符串")
+        return value.strip()
+
+    @staticmethod
+    def _validate_task_id(value: object) -> int | None:
+        """允许报告笔记不关联任务，任务编号必须是正整数."""
+        if value is None:
+            return None
+        if type(value) is not int or value <= 0:
+            raise ValueError("task_id 必须是正整数或 None")
+        return value
+
+    @staticmethod
+    def _validate_tags(value: object) -> list[str]:
+        """复制标签列表，避免调用方后续修改影响本次结果."""
+        if not isinstance(value, list) or not all(
+            isinstance(tag, str) for tag in value
+        ):
+            raise TypeError("tags 必须是字符串列表")
+        return list(value)
+
+    def _note_path(self, note_id: object) -> Path:
+        """根据有效笔记编号定位文件，拒绝路径形式的编号."""
+        if (
+            not isinstance(note_id, str)
+            or re.fullmatch(r"note_[0-9a-f]{12}", note_id) is None
+        ):
+            raise ValueError("note_id 格式不正确")
+        return self._workspace / f"{note_id}.json"
+
+    def _create(self, parameters: dict[str, Any]) -> NoteRecord:
+        """首次创建时写入实际正文，不接受空的占位笔记."""
+        data: NoteRecord = {
+            "note_id": f"note_{uuid.uuid4().hex[:12]}",
+            "task_id": self._validate_task_id(parameters.get("task_id")),
+            "title": self._require_text(parameters.get("title", "未命名笔记"), "title"),
+            "note_type": self._require_text(
+                parameters.get("note_type", "task_state"), "note_type"
+            ),
+            "tags": self._validate_tags(parameters.get("tags", ["deep_research"])),
+            "content": self._require_text(parameters.get("content"), "content"),
+        }
+        self._save(data)
+        return data
+
+    def _read(self, note_id: object) -> NoteRecord:
+        """读取并验证现有记录，文件缺失和损坏均向上抛出."""
+        path = self._note_path(note_id)
+        raw: Any = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict) or raw.get("note_id") != note_id:
+            raise ValueError("笔记文件内容与 note_id 不匹配")
+        if not isinstance(raw.get("content"), str):
+            raise ValueError("笔记 content 必须是字符串")
+
+        # 允许读取旧版的空正文，之后可由服务层提交真实摘要。
+        return NoteRecord(
+            note_id=raw["note_id"],
+            task_id=self._validate_task_id(raw.get("task_id")),
+            title=self._require_text(raw.get("title"), "title"),
+            note_type=self._require_text(raw.get("note_type"), "note_type"),
+            tags=self._validate_tags(raw.get("tags", [])),
+            content=raw["content"],
+        )
+
+    def _update(self, parameters: dict[str, Any]) -> NoteRecord:
+        """使用 append 追加工作记录，replace 保存最新完整摘要."""
+        data = self._read(parameters.get("note_id"))
+        if "task_id" in parameters:
+            task_id = self._validate_task_id(parameters["task_id"])
+            if task_id != data["task_id"]:
+                raise ValueError("笔记不属于当前任务")
+        if "note_type" in parameters and parameters["note_type"] != data["note_type"]:
+            raise ValueError("不能通过更新改变笔记类型")
+
+        content = self._require_text(parameters.get("content"), "content")
+        mode = parameters.get("mode", "append")
+        if mode not in ("append", "replace"):
+            raise ValueError("mode 必须是 append/replace")
+
+        old_content = data["content"].strip()
+        if mode == "replace" or not old_content:
+            data["content"] = content
+        else:
+            data["content"] = f"{old_content}\n\n---\n{content}"
+
+        if "title" in parameters:
+            data["title"] = self._require_text(parameters["title"], "title")
+        if "tags" in parameters:
+            data["tags"] = self._validate_tags(parameters["tags"])
+
+        self._save(data)
+        return data
+
+    def _save(self, data: NoteRecord) -> None:
+        """在同一目录写临时文件，完整写入后原子替换正式文件."""
+        path = self._note_path(data["note_id"])
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            logger.info(f"📝[NoteTool] 笔记创建成功,note_id={note_id},path={file_path}")
-            return f"笔记创建成功,note_id={note_id}"
-        except Exception as e:
-            logger.exception("📝 笔记创建失败 | error=%s", str(e))
-            raise RuntimeError(f"笔记创建失败：{e}") from e
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
-    def _read(self,params:Dict[str,Any])->str:
-        """读取笔记"""
-        note_id = str(params.get("note_id")).strip()
-        if not note_id:
-            logger.error("❌[NoteTool]read失败，note_id为空")
-            raise ValueError("note_id不能为空")
-        file_path = self._workspace/f"{note_id}.json"
-
-        if not file_path.exists():
-            logger.error(f"❌[NoteTool]read失败，{file_path}不存在")
-            raise FileNotFoundError(f"笔记不存在：{file_path}")
-
-        try:
-            data = json.loads(file_path.read_text(encoding="utf-8"))
-            logger.info(f"📝 笔记读取成功 | note_id={note_id},file_path={file_path}")
-            return json.dumps(data,ensure_ascii=False,indent=2)
-        except Exception as e:
-            logger.exception("📝 笔记读取失败 | note_id=%s error=%s", note_id, str(e))
-            raise
-    def _update(self, params: dict[str, Any]) -> str:
-        """增量更新笔记内容（追加模式）"""
-        note_id = str(params.get("note_id", "")).strip()
-        if not note_id:
-            raise ValueError("note_id 不能为空")
-
-        file_path = self._workspace / f"{note_id}.json"
-        if not file_path.exists():
-            raise FileNotFoundError(f"笔记不存在：{note_id}")
-
-        try:
-            data = json.loads(file_path.read_text(encoding="utf-8"))
-            new_content = str(params.get("content","")).strip()
-
-            if new_content:
-                if data["content"]:
-                    data["content"] += f"\n\n---\n{new_content}"
-                else:
-                    data["content"] = new_content
-            # 可选更新标题和标签
-            if params.get("title"):
-                data["title"] = params["title"]
-            if params.get("tags"):
-                data["tags"] = params["tags"]
-
-            file_path.write_text(
-                json.dumps(data,ensure_ascii=False,indent=2),
-                encoding="utf-8"
-            )
-            logger.info("📝 笔记更新成功 | note_id=%s", note_id)
-            return "笔记更新成功"
-
-        except Exception as e:
-            logger.exception("📝 笔记更新失败 | note_id=%s error=%s", note_id, str(e))
-            raise
-
-        # ===================== 参数定义 =====================
-    def get_parameters(self) -> List[ToolParameter]:
-        """OpenAI 格式的工具参数 schema"""
+    def get_parameters(self) -> list[ToolParameter]:
+        """声明模型可用参数，按 action 的必填校验在运行时执行."""
         return [
             ToolParameter(
                 name="action",
                 type="string",
-                description="操作类型，可选：create(创建)、read(读取)、update(增量更新)",
+                description="操作：create 创建、read 读取、update 更新",
                 required=True,
             ),
             ToolParameter(
                 name="note_id",
                 type="string",
-                description="笔记唯一ID，read 和 update 时必填",
+                description="笔记唯一 ID，read/update 时必填",
                 required=False,
             ),
             ToolParameter(
                 name="task_id",
                 type="integer",
-                description="关联的任务编号",
+                description="关联的任务编号，创建任务笔记时填写",
                 required=False,
             ),
             ToolParameter(
@@ -159,19 +253,26 @@ class NoteTool(Tool):
             ToolParameter(
                 name="note_type",
                 type="string",
-                description="笔记类型，如 task_state / conclusion",
+                description="笔记类型：task_state 任务笔记或 conclusion 报告笔记",
                 required=False,
             ),
             ToolParameter(
                 name="tags",
                 type="array",
-                description="标签列表，用于检索，必须包含 deep_research 和 task_{id}",
+                description="标签列表，任务笔记包含 deep_research 和 task_编号",
                 required=False,
             ),
             ToolParameter(
                 name="content",
                 type="string",
-                description="笔记正文内容",
+                description="实际笔记正文，create/update 时必填；不能填写操作说明",
                 required=False,
+            ),
+            ToolParameter(
+                name="mode",
+                type="string",
+                description="仅 update 使用：append 追加记录，replace 替换完整正文",
+                required=False,
+                default="append",
             ),
         ]

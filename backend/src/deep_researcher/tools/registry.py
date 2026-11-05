@@ -16,7 +16,7 @@ class ToolRegistry:
         self._tools: Dict[str,Tool]={}
         self._functions :Dict[str,dict[str,Any]]={}
 
-    def register_tool(self,tool:Tool,auto_expandable:bool=True)->None:
+    def register_tool(self,tool:Tool,auto_expandable:bool=False)->None:
         """
         注册Tool对象
         Args:

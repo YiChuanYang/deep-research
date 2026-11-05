@@ -3,17 +3,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import List,Dict
+from typing import Any, List
 
 from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
 from deep_researcher.models import SummaryState, TodoItem
-from deep_researcher.config import Configuration
 from deep_researcher.prompts import todo_planner_instructions, get_current_date
 from deep_researcher.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-def _generate_research_tasks(tasks:List[Dict])->str:
+def _generate_research_tasks(tasks: List[dict[str, Any]]) -> str:
     """虚拟工具，使模型以参数列表的形式返回研究任务"""
     return f"已接受{len(tasks)}个调研任务"
 
@@ -62,14 +61,30 @@ class PlanningService:
             current_date = get_current_date(),
             research_topic = state.research_topic
         )
-        parsed_tasks:List[Dict]=[]
+        parsed_tasks: list[dict[str, Any]] = []
 
-        def capture_tasks(event:Dict):
-            """临时监听器，临时替换agent自带的监听器"""
+        def capture_tasks(event: dict[str, Any]) -> None:
+            """只接收成功的规划工具结果，其他工具事件交给原监听器。"""
             nonlocal parsed_tasks
+            if (
+                event.get("tool_name") != "generate_research_tasks"
+                or not event.get("success")
+            ):
+                return
             try:
                 args = json.loads(event["raw_parameters"])
-                parsed_tasks = args.get("tasks",[])
+                if not isinstance(args, dict):
+                    raise TypeError("规划工具参数必须是字典")
+                tasks = args.get("tasks", [])
+                if not isinstance(tasks, list) or not all(
+                    isinstance(task, dict) for task in tasks
+                ):
+                    raise TypeError("tasks 必须是由字典组成的列表")
+                parsed_tasks = tasks
+                logger.info(
+                    "🪝 规划任务已捕获：call_id=%s task_count=%d",
+                    event.get("tool_call_id"), len(parsed_tasks),
+                )
             except Exception as exc:
                 logger.exception(
                     "⚠️ 规划任务解析失败：error_type=%s",
@@ -79,7 +94,7 @@ class PlanningService:
         #临时挂载监听器
         original_listener = self._agent.tool_call_listener
 
-        def capture_and_forward(event: Dict):
+        def capture_and_forward(event: dict[str, Any]) -> None:
             capture_tasks(event)
             if original_listener is not None:
                 original_listener(event)
@@ -142,9 +157,3 @@ class PlanningService:
             intent="收集主题的核心背景与最新动态",
             query=f"{state.research_topic} 最新进展" if state.research_topic else "基础背景梳理",
         )
-
-
-
-
-
-

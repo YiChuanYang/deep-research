@@ -21,12 +21,12 @@ class SimpleAgent(Agent):
             config:Optional[Configuration]=None,
             tool_registry:Optional[ToolRegistry]=None,
             enable_tool_call:bool=False
-    ):
+    )->None:
         super().__init__(name,llm,sys_prompt,config)
         self.tool_registry = tool_registry 
         self.enable_tool_call = enable_tool_call and self.tool_registry is not None
         logger.info(
-            "🤖 Agent 已初始化：name=%s provider=%s tool_call=%s",
+            "🤖 Agent 已初始化：agent=%s provider=%s tool_call=%s",
             self.name,
             self.llm.llm_provider,
             self.enable_tool_call,
@@ -112,7 +112,7 @@ class SimpleAgent(Agent):
             role='user',
             content=input_text
         ))
-
+        logger.info(f"🔄 Agent 迭代开始:agent={self.name}")
         for iteration in range(max_tool_iterations+1):
             if not schemas or iteration == max_tool_iterations:
                 tool_choice = 'none'
@@ -122,12 +122,7 @@ class SimpleAgent(Agent):
                 tool_choice = 'auto'
 
             logger.info(
-                "🔄 Agent 迭代开始：agent=%s iteration=%d tool_choice=%s tools=%d",
-                self.name,
-                iteration,
-                tool_choice,
-                len(schemas),
-            )
+                f"🔄 进入第{iteration}次迭代：tool_choice={tool_choice}")
 
             try:
                 response = self.llm.invoke(
@@ -136,7 +131,7 @@ class SimpleAgent(Agent):
                     tool_choice=tool_choice,
                     **options
                 )
-                if response is None or response.choices is None:
+                if response is None or not response.choices:
                     raise ValueError("模型响应为空")
                 choice = response.choices[0]
 
@@ -147,7 +142,7 @@ class SimpleAgent(Agent):
                     iteration,
                     type(e).__name__,
                 )
-                return f"❌[SimpleAgent]run响应失败，e={e}"
+                raise RuntimeError("模型请求失败") from e
 
             message = choice.message
             all_calls = message.tool_calls or []
@@ -167,7 +162,11 @@ class SimpleAgent(Agent):
 
             #没有工具调用直接返回文本
             if not calls:
-                text = message.content or message.refusal
+                if choice.finish_reason == "length":
+                    raise RuntimeError("模型输出被截断，未获得完整答复")
+                if message.refusal:
+                    raise RuntimeError(f"模型拒绝生成答复：{message.refusal}")
+                text = message.content
                 if not isinstance(text, str) or not text.strip():
                       raise RuntimeError(
                           "模型没有返回文本或工具调用"
@@ -188,11 +187,7 @@ class SimpleAgent(Agent):
 
             tool_names = [call.function.name for call in calls]
             logger.info(
-                "🧰 Agent 收到工具调用：agent=%s iteration=%d count=%d tools=%s",
-                self.name,
-                iteration,
-                len(calls),
-                tool_names,
+                f"🧰 Agent[{self.name}]进入工具调用，将调用工具：{tool_names}"
             )
 
             #保存工具调用消息
@@ -213,12 +208,7 @@ class SimpleAgent(Agent):
             
             for call in calls:
                 logger.info(
-                    "🔧 Agent 执行工具：agent=%s iteration=%d tool=%s call_id=%s",
-                    self.name,
-                    iteration,
-                    call.function.name,
-                    call.id,
-                )
+                    f"🔧 Agent[{self.name}] 执行工具 iteration={iteration} tool={call.function.name} call_id={call.id}" )
                 observation = self._execute_tool_call(call)
                 self.add_message(observation)
 
@@ -227,17 +217,4 @@ class SimpleAgent(Agent):
             self.name,
             max_tool_iterations,
             )
-        return "工具调用迭代已达到上限，未获得最终答复"
-           
-
-
-
-
-            
-
-
-
-
-
-
-        
+        raise RuntimeError("工具调用迭代已达到上限，未获得最终答复")
