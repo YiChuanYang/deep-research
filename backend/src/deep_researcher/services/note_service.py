@@ -8,6 +8,8 @@ from deep_researcher.config import Configuration
 from deep_researcher.models import SummaryState
 from deep_researcher.tools.note_tool import NoteTool
 
+from deep_researcher.logging_config import log_operation
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +27,7 @@ class NoteService:
             else None
         )
 
+    @log_operation("读取任务笔记", task_parameter="task_id")
     def load_task_note(self, state: SummaryState, task_id: int) -> str:
         """Return existing task-note content, or an empty string for a new task."""
         task = state.get_task(task_id)
@@ -57,6 +60,7 @@ class NoteService:
         )
         return note["content"]
 
+    @log_operation("保存任务笔记", task_parameter="task_id")
     def save_task_note(self, state: SummaryState, task_id: int) -> None:
         """Create or replace the complete note for a summarized task."""
         if self._tool is None:
@@ -90,11 +94,15 @@ class NoteService:
         task.note_id = saved["note_id"]
         task.note_path = saved["note_path"]
         logger.info(
-            "📝 任务笔记已保存：task_id=%d note_id=%s",
-            task_id,
-            task.note_id,
+            "任务笔记已保存 · %s", task.note_id,
+            extra={
+                "event": "task_note_saved",
+                "note_id": task.note_id,
+                "note_path": task.note_path,
+            },
         )
 
+    @log_operation("保存报告笔记")
     def save_report_note(self, state: SummaryState) -> None:
         """Create or replace a conclusion note for the final report."""
         if self._tool is None or not state.structured_report:
@@ -115,4 +123,10 @@ class NoteService:
         state.report_note_id = saved["note_id"]
         state.report_note_path = saved["note_path"]
         logger.info(
-            f"📝 最终报告笔记已保存：note_id={state.report_note_id},path={state.report_note_path}")
+            "报告已保存 · %s", state.report_note_path,
+            extra={
+                "event": "report_note_saved",
+                "note_id": state.report_note_id,
+                "note_path": state.report_note_path,
+            },
+        )

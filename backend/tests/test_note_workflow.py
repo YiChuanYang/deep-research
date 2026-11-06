@@ -19,7 +19,7 @@ from deep_researcher.services.note_service import NoteService
 from deep_researcher.services.planner import PlanningService
 from deep_researcher.services.reporter import ReportingService
 from deep_researcher.services.search import SearchService
-from deep_researcher.services.summarizer import SumarizationService
+from deep_researcher.services.summarizer import SummarizationService
 from deep_researcher.services.tool_events import ToolCallTracker
 from deep_researcher.tools.note_tool import NoteTool
 from deep_researcher.tools.registry import ToolRegistry
@@ -142,7 +142,7 @@ def make_service(
     responses: list[ChatCompletion | Exception | None],
     *,
     enable_notes: bool = True,
-) -> tuple[SumarizationService, SummaryState, ToolAwareAgent, ScriptedLLM]:
+) -> tuple[SummarizationService, SummaryState, ToolAwareAgent, ScriptedLLM]:
     config = Configuration(
         enable_notes=enable_notes,
         notes_workspace=str(note_tool._workspace),
@@ -169,7 +169,7 @@ def make_service(
     def factory() -> ToolAwareAgent:
         return agent
 
-    service = SumarizationService(
+    service = SummarizationService(
         factory,
         config,
         note_service=NoteService(

@@ -1,3 +1,5 @@
+from time import perf_counter
+
 from dotenv import load_dotenv
 from typing import Any,Dict,Optional,List
 from openai import OpenAI
@@ -35,7 +37,7 @@ class MyLLM():
 
         else:
             self.llm_provider = self._auto_detect_provider() or "zhipu"
-            logger.info(
+            logger.debug(
                 "🔌 已选择 LLM provider：%s，正在读取环境配置",
                 self.llm_provider,
             )
@@ -56,7 +58,7 @@ class MyLLM():
             tools:List[Dict[str,Any]]|None=None,
             *,
             tool_choice:str='auto',
-            **kwargs:Any)->ChatCompletion|None:
+            **kwargs:Any)->ChatCompletion:
         """invoke方法，支持原生工具调用"""
         request = dict(kwargs)
         if "temperature" not in request:
@@ -81,31 +83,24 @@ class MyLLM():
             request.get("tool_choice", "none"),
         )
 
-        try:
-            response = self.client.chat.completions.create(**request)
-
-            if not response.choices:
-                raise ValueError("模型响应中没有 choices")
-
-        except Exception as exc:
-            logger.exception(
-                "❌ LLM 请求失败：provider=%s model=%s error_type=%s",
-                self.llm_provider,
-                self.model,
-                type(exc).__name__,
-            )
-            return None
+        started_at = perf_counter()
+        response = self.client.chat.completions.create(**request)
+        if not response.choices:
+            raise ValueError("模型响应中没有 choices")
 
         usage = getattr(response, "usage", None)
-        logger.info(
-            "✅ LLM 响应完成：model=%s choices=%d tool_calls=%d tokens=%s",
+        logger.debug(
+            "模型响应完成 · model=%s tokens=%s 耗时=%.2fs",
             getattr(response, "model", self.model),
-            len(response.choices),
-            sum(
-                len(choice.message.tool_calls or [])
-                for choice in response.choices
-            ),
             getattr(usage, "total_tokens", None),
+            perf_counter() - started_at,
+            extra={
+                "event": "model_response",
+                "model": self.model,
+                "provider": self.llm_provider,
+                "tokens": getattr(usage, "total_tokens", None),
+                "duration_s": round(perf_counter() - started_at, 3),
+            },
         )
         return response
 

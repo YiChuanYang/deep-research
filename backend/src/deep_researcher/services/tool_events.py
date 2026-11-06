@@ -20,7 +20,7 @@ class ToolCallTracker:
         """绑定当前研究状态及笔记工作目录."""
         self._state = state
         self._workspace = Path(notes_workspace).resolve()
-        logger.info(
+        logger.debug(
             "👂 笔记监听器已初始化：workspace=%s",
             self._workspace,
         )
@@ -59,7 +59,7 @@ class ToolCallTracker:
         if data.get("note_type") == "conclusion":
             self._state.report_note_id = note_id
             self._state.report_note_path = note_path
-            logger.info(
+            logger.debug(
                 "🪝 报告笔记关联已同步：action=%s call_id=%s note_id=%s",
                 data.get("action"),
                 call_id,
@@ -80,7 +80,7 @@ class ToolCallTracker:
             if task.id == task_id:
                 task.note_id = note_id
                 task.note_path = note_path
-                logger.info(
+                logger.debug(
                     "🪝 任务笔记关联已同步：action=%s call_id=%s task_id=%d note_id=%s",
                     data.get("action"),
                     call_id,

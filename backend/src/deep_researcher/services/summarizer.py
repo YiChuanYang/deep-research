@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from collections.abc import Callable
 
 from deep_researcher.agents.simple_agent import SimpleAgent
@@ -11,6 +12,8 @@ from deep_researcher.models import SummaryState
 from deep_researcher.prompts import summarizer_running_prompt
 from deep_researcher.services.note_service import NoteService
 from deep_researcher.utils import strip_thinking_tokens
+
+from deep_researcher.logging_config import log_operation
 
 logger = logging.getLogger(__name__)
 
@@ -28,25 +31,23 @@ class SummarizationService:
         self._agent_factory = summarizer_factory
         self.config = config
         self._notes = note_service or NoteService(config)
-        logger.info(
+        logger.debug(
             "✅ 总结服务已初始化：enable_notes=%s",
             config.enable_notes,
         )
 
+    @log_operation("任务总结", task_parameter="task_id")
     def summarize_task(
         self,
         state: SummaryState,
         task_id: int,
     ) -> str:
         """根据 state 中的任务与搜索上下文生成并持久化摘要."""
+        started_at = perf_counter()
         task = state.get_task(task_id)
         task.status = "in_progress"
         agent: SimpleAgent | None = None
-        logger.info(
-            "📋 任务总结开始：task_id=%d note_id=%s",
-            task.id,
-            task.note_id,
-        )
+        logger.info("正在生成摘要")
 
         try:
             context = state.search_contexts.get(task_id)
@@ -81,16 +82,20 @@ class SummarizationService:
                 raise
             task.status = "completed"
             logger.info(
-                "✅ 任务总结完成：task_id=%d summary_chars=%d note_id=%s",
-                task.id,
-                len(summary),
-                task.note_id,
+                "摘要完成 · %d 字 · 耗时=%.2fs",
+                len(summary), perf_counter() - started_at,
+                extra={
+                    "event": "summary_completed",
+                    "summary_chars": len(summary),
+                    "note_id": task.note_id,
+                    "duration_s": round(perf_counter() - started_at, 3),
+                },
             )
             return summary
 
         except Exception:
             task.status = "failed"
-            logger.exception(
+            logger.debug(
                 "❌ 任务总结或笔记提交失败：task_id=%d note_id=%s",
                 task.id,
                 task.note_id,

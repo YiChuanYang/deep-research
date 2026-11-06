@@ -8,6 +8,8 @@ from deep_researcher.agents.message import Message
 import json
 import logging
 
+from deep_researcher.logging_config import log_exception_once
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +40,7 @@ class ToolAwareAgent(SimpleAgent):
                 """
         super().__init__(name,llm,sys_prompt,config,tool_registry,enable_tool_call)
         self.tool_call_listener = tool_call_listener
-        logger.info(
+        logger.debug(
             "👂 ToolAwareAgent 监听器状态：agent=%s enabled=%s",
             self.name,
             self.tool_call_listener is not None,
@@ -60,7 +62,7 @@ class ToolAwareAgent(SimpleAgent):
             #执行工具
             if self.tool_registry is None:
                 raise ValueError("工具表未注册")
-            logger.info(
+            logger.debug(
                 "🔧 工具调用开始：agent=%s tool=%s call_id=%s parameters=%d",
                 self.name,
                 tool_name,
@@ -76,7 +78,7 @@ class ToolAwareAgent(SimpleAgent):
                 observation if isinstance(observation,str)
                 else json.dumps(observation,ensure_ascii=False)
             )
-            logger.info(
+            logger.debug(
                 "✅ 工具调用完成：agent=%s tool=%s call_id=%s result_chars=%d",
                 self.name,
                 tool_name,
@@ -85,12 +87,9 @@ class ToolAwareAgent(SimpleAgent):
             )
         except Exception as e:
             success = False
-            logger.exception(
-                "❌ 工具调用失败：agent=%s tool=%s call_id=%s error_type=%s",
-                self.name,
-                tool_name,
-                tool_call_id,
-                type(e).__name__,
+            log_exception_once(
+                logger, "工具调用失败 · tool=%s call_id=%s",
+                tool_name, tool_call_id, error=e, level=logging.WARNING,
             )
             result = json.dumps({
                 "error_type":type(e).__name__,
@@ -117,11 +116,9 @@ class ToolAwareAgent(SimpleAgent):
                     tool_call_id,
                 )
             except Exception as e:
-                logger.exception(
-                    "⚠️ 工具监听器执行失败：agent=%s tool=%s call_id=%s",
-                    self.name,
-                    tool_name,
-                    tool_call_id,
+                log_exception_once(
+                    logger, "监听器处理失败 · tool=%s call_id=%s",
+                    tool_name, tool_call_id, error=e, level=logging.WARNING,
                 )
             
         return Message(

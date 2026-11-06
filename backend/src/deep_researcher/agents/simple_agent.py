@@ -7,6 +7,8 @@ from typing import Optional,Dict,Any,List
 import logging
 import json
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
+from deep_researcher.logging_config import log_exception_once, log_operation
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +27,7 @@ class SimpleAgent(Agent):
         super().__init__(name,llm,sys_prompt,config)
         self.tool_registry = tool_registry 
         self.enable_tool_call = enable_tool_call and self.tool_registry is not None
-        logger.info(
+        logger.debug(
             "🤖 Agent 已初始化：agent=%s provider=%s tool_call=%s",
             self.name,
             self.llm.llm_provider,
@@ -69,11 +71,9 @@ class SimpleAgent(Agent):
             content = result if isinstance(result,str) else json.dumps(result, ensure_ascii=False)
 
         except Exception as e:
-            logger.exception(
-                "❌ Agent 工具调用失败：tool=%s call_id=%s error_type=%s",
-                name,
-                tool_call_id,
-                type(e).__name__,
+            log_exception_once(
+                logger, "工具调用失败 · tool=%s call_id=%s",
+                name, tool_call_id, error=e, level=logging.WARNING,
             )
             content = f"工具调用失败,失败原因：{e}"
 
@@ -84,6 +84,7 @@ class SimpleAgent(Agent):
 
         )
 
+    @log_operation("模型对话", report_errors=False)
     def run(
             self,
             input_text:str,
@@ -120,7 +121,7 @@ class SimpleAgent(Agent):
             else:
                 tool_choice = 'auto'
 
-            logger.info(
+            logger.debug(
                 "🔄 Agent 迭代：agent=%s iteration=%d tool_choice=%s tools=%d",
                 self.name,
                 iteration,
@@ -140,11 +141,9 @@ class SimpleAgent(Agent):
                 choice = response.choices[0]
 
             except Exception as e:
-                logger.exception(
-                    "❌ Agent 模型请求失败：agent=%s iteration=%d error_type=%s",
-                    self.name,
-                    iteration,
-                    type(e).__name__,
+                logger.debug(
+                    "模型请求失败，向调用方传递异常 · agent=%s iteration=%d",
+                    self.name, iteration,
                 )
                 raise RuntimeError("模型请求失败") from e
 
@@ -176,7 +175,7 @@ class SimpleAgent(Agent):
                           "模型没有返回文本或工具调用"
                       )
 
-                logger.info(
+                logger.debug(
                     "✅ Agent 运行完成：agent=%s iteration=%d response_chars=%d",
                     self.name,
                     iteration,
@@ -190,7 +189,7 @@ class SimpleAgent(Agent):
                 return text
 
             tool_names = [call.function.name for call in calls]
-            logger.info(
+            logger.debug(
                 f"🧰 Agent[{self.name}]进入工具调用，将调用工具：{tool_names}"
             )
 

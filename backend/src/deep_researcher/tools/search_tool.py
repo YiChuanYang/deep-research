@@ -120,7 +120,7 @@ class SearchTool(Tool):
             return entries
 
         except DDGSException as e:
-            logger.exception("❌ DuckDuckGo 搜索失败 | error=%s", str(e))
+            logger.debug("❌ DuckDuckGo 搜索失败 | error=%s", str(e))
             raise RuntimeError(f"DuckDuckGo 搜索失败：{e}") from e
 
     # ===================== 后端实现：Tavily =====================
@@ -146,7 +146,7 @@ class SearchTool(Tool):
             return results
 
         except Exception as e:
-            logger.exception("❌ Tavily 搜索失败 | error=%s", str(e))
+            logger.debug("❌ Tavily 搜索失败 | error=%s", str(e))
             raise RuntimeError(f"Tavily 搜索失败：{e}") from e
 
     # ===================== 统一标准化逻辑 =====================

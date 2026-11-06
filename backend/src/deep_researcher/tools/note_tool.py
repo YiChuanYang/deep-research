@@ -51,7 +51,7 @@ class NoteTool(Tool):
         self._workspace = Path(self._config.notes_workspace).resolve()
         self._workspace.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
-        logger.info(
+        logger.debug(
             "📝 笔记工具已初始化：workspace=%s",
             self._workspace,
         )
@@ -87,21 +87,21 @@ class NoteTool(Tool):
                     "note_path": str(self._note_path(data["note_id"])),
                 }
         except FileNotFoundError:
-            logger.warning(
+            logger.debug(
                 "⚠️ 笔记文件不存在：action=%s note_id=%s",
                 action,
                 parameters.get("note_id"),
             )
             raise
         except Exception:
-            logger.exception(
+            logger.debug(
                 "❌ 笔记操作失败：action=%s note_id=%s",
                 action,
                 parameters.get("note_id"),
             )
             raise
 
-        logger.info(
+        logger.debug(
             "✅ 笔记操作完成：action=%s note_id=%s task_id=%s "
             "mode=%s content_chars=%d path=%s",
             action,

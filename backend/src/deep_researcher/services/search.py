@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+from time import perf_counter
 from typing import Any, Optional, Tuple
 from deep_researcher.tools.search_tool import SearchTool
 
@@ -11,10 +12,13 @@ from deep_researcher.utils import (
     get_config_value,
 )
 
+from deep_researcher.logging_config import log_operation
+
 logger = logging.getLogger(__name__)
 
 MAX_TOKENS_PER_SOURCE = 2000
 
+@log_operation("搜索")
 def dispatch_search(
     query: str,
     config: Configuration,
@@ -24,14 +28,12 @@ def dispatch_search(
 ) -> Tuple[dict[str, Any] | None, list[str], Optional[str], str]:
     """Execute configured search backend and normalise response payload."""
 
+    started_at = perf_counter()
     search_api = get_config_value(config.search_api)
     active_search_tool = search_tool or SearchTool(config=config)
 
     logger.info(
-        "🔎 搜索开始：backend=%s loop=%d query_chars=%d max_results=5",
-        search_api,
-        loop_count,
-        len(query),
+        "正在检索 · backend=%s", search_api,
     )
     try:
         raw_response = active_search_tool.run(
@@ -46,7 +48,7 @@ def dispatch_search(
             }
         )
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception(
+        logger.debug(
             "❌ 搜索失败：backend=%s error_type=%s",
             search_api,
             type(exc).__name__,
@@ -86,11 +88,14 @@ def dispatch_search(
             len(notices),
         )
     logger.info(
-        "✅ 搜索完成：backend=%s resolved_backend=%s results=%d has_answer=%s",
-        search_api,
-        backend_label,
-        len(results),
-        bool(answer_text),
+        "检索完成 · %d 个来源 · 耗时=%.2fs",
+        len(results), perf_counter() - started_at,
+        extra={
+            "event": "search_completed",
+            "backend": backend_label,
+            "source_count": len(results),
+            "duration_s": round(perf_counter() - started_at, 3),
+        },
     )
 
     return payload, notices, answer_text, backend_label
@@ -111,7 +116,7 @@ def prepare_research_context(
     if answer_text:
         context = f"AI直接答案：\n{answer_text}\n\n{context}"
 
-    logger.info(
+    logger.debug(
         "🧩 搜索上下文整理完成：sources=%d summary_chars=%d context_chars=%d",
         len((search_result or {}).get("results", [])),
         len(sources_summary),
@@ -128,6 +133,7 @@ class SearchService:
         self._config = config
         self._search_tool = SearchTool(config=config)
 
+    @log_operation("任务搜索", task_parameter="task_id")
     def search_task(self, state: SummaryState, task_id: int) -> None:
         task = state.get_task(task_id)
         loop_count = state.research_loop_count + 1
@@ -150,7 +156,7 @@ class SearchService:
         state.web_research_results.append(context)
         state.research_loop_count = loop_count
 
-        logger.info(
+        logger.debug(
             "🔎 任务搜索结果已写入状态：task_id=%d backend=%s sources=%d",
             task_id,
             backend,

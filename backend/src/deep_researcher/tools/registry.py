@@ -36,7 +36,7 @@ class ToolRegistry:
                             sub_tool.name,
                         )
                     self._tools[sub_tool.name]=sub_tool
-                logger.info(
+                logger.debug(
                     "🧰 工具组已展开：tool=%s count=%d replaced=%d",
                     tool.name,
                     len(expanded_tools),
@@ -50,7 +50,7 @@ class ToolRegistry:
             )
 
         self._tools[tool.name]=tool
-        logger.info(
+        logger.debug(
             "🧰 工具已注册：tool=%s type=tool",
             tool.name,
         )
@@ -77,7 +77,7 @@ class ToolRegistry:
               "func": func,
               "parameters": deepcopy(parameters),
           }
-          logger.info(
+          logger.debug(
               "🧰 工具已注册：tool=%s type=function",
               name,
           )
@@ -86,14 +86,14 @@ class ToolRegistry:
         """注销工具"""
         if name in self._tools:
             del self._tools[name]
-            logger.info(
+            logger.debug(
                 "🗑️ 工具已注销：tool=%s",
                 name,
             )
             return True
         elif name in self._functions:
             del self._functions[name]
-            logger.info(
+            logger.debug(
                 "🗑️ 工具已注销：tool=%s",
                 name,
             )
@@ -204,7 +204,7 @@ class ToolRegistry:
         tool_count = len(self._tools) + len(self._functions)
         self._tools.clear()
         self._functions.clear()
-        logger.info(
+        logger.debug(
             "🧹 工具注册表已清空：removed=%d",
             tool_count,
         )

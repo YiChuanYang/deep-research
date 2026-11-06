@@ -10,6 +10,8 @@ from deep_researcher.models import SummaryState, TodoItem
 from deep_researcher.prompts import todo_planner_instructions, get_current_date
 from deep_researcher.tools.registry import ToolRegistry
 
+from deep_researcher.logging_config import log_operation
+
 logger = logging.getLogger(__name__)
 
 def _generate_research_tasks(tasks: List[dict[str, Any]]) -> str:
@@ -54,6 +56,7 @@ class PlanningService:
                 "required": ["tasks"]
             }
         )
+    @log_operation("研究规划")
     def plan_todo_list(self,state:SummaryState)->List[TodoItem]:
         """通过监听器捕捉结构化参数，构造todoitem"""
         #拼接运行时提示词
@@ -81,12 +84,12 @@ class PlanningService:
                 ):
                     raise TypeError("tasks 必须是由字典组成的列表")
                 parsed_tasks = tasks
-                logger.info(
-                    "🪝 规划任务已捕获：call_id=%s task_count=%d",
+                logger.debug(
+                    "已捕获规划参数 · call_id=%s tasks=%d",
                     event.get("tool_call_id"), len(parsed_tasks),
                 )
             except Exception as exc:
-                logger.exception(
+                logger.debug(
                     "⚠️ 规划任务解析失败：error_type=%s",
                     type(exc).__name__,
                 )
@@ -101,17 +104,13 @@ class PlanningService:
 
         self._agent.tool_call_listener = capture_and_forward
         try:
-            logger.info(
-                "🧭 开始生成研究计划：agent=%s topic_chars=%d",
-                self._agent.name,
-                len(state.research_topic or ""),
-            )
+            logger.info("正在规划研究任务")
             self._agent.run(
                 input_text=prompt,
                 tool_choice="required"
             )
         except Exception as exc:
-            logger.exception(
+            logger.debug(
                 "❌ 研究计划生成失败：error_type=%s",
                 type(exc).__name__,
             )
@@ -143,9 +142,8 @@ class PlanningService:
 
         state.todo_items = todo_items
         logger.info(
-            "✅ 研究计划生成完成：task_count=%d fallback=%s",
-            len(todo_items),
-            used_fallback,
+            "规划完成 · %d 个任务", len(todo_items),
+            extra={"event": "plan_completed", "task_count": len(todo_items)},
         )
         return todo_items
 
