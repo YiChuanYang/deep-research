@@ -22,15 +22,36 @@ class TodoItem:
 class SummaryState:
     research_topic: Optional[str] = field(default=None)  # Report topic
     search_query: Optional[str] = field(default=None)  # Deprecated placeholder
-    #通过Annotated标注元数据operator.add来实现列表的累加功能
+    # State owns task results; services address tasks by ID.
     web_research_results: Annotated[list, operator.add] = field(default_factory=list)
     sources_gathered: Annotated[list, operator.add] = field(default_factory=list)
+    search_contexts: dict[int, str] = field(default_factory=dict)
     research_loop_count: int = field(default=0)  # Research loop count
     running_summary: Optional[str] = field(default=None)  # Legacy summary field
     todo_items: Annotated[list, operator.add] = field(default_factory=list)
     structured_report: Optional[str] = field(default=None)
     report_note_id: Optional[str] = field(default=None)
     report_note_path: Optional[str] = field(default=None)
+
+    def get_task(self, task_id: int) -> TodoItem:
+        for task in self.todo_items:
+            if task.id == task_id:
+                return task
+        raise KeyError(f"任务不存在：{task_id}")
+    def __repr__(self):
+        lines = ["SummaryState("]
+        for key, value in self.__dict__.items():
+            if key.startswith("_"):
+                continue
+            # 超长字符串截断，防止控制台刷屏
+            if isinstance(value, str) and len(value) > 150:
+                val_str = repr(value[:150] + "……")
+            else:
+                val_str = repr(value)
+            lines.append(f"  {key}={val_str},")
+        lines.append(")")
+        return "\n".join(lines)
+
 
 
 @dataclass(kw_only=True)

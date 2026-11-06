@@ -15,7 +15,7 @@ class MyLLM():
             model:Optional[str]=None,
             api_key:Optional[str]=None,
             base_url:Optional[str]=None,
-            timeout:int=30,
+            timeout:int=120,
             provider:Optional[str]=None,)->None:
 
         if provider:
@@ -72,7 +72,7 @@ class MyLLM():
             request["tools"] = tools
             request["tool_choice"] = tool_choice
 
-        logger.info(
+        logger.debug(
             "📤 LLM 请求开始：provider=%s model=%s messages=%d tools=%d tool_choice=%s",
             self.llm_provider,
             self.model,

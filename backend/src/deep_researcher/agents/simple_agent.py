@@ -112,7 +112,6 @@ class SimpleAgent(Agent):
             role='user',
             content=input_text
         ))
-        logger.info(f"🔄 Agent 迭代开始:agent={self.name}")
         for iteration in range(max_tool_iterations+1):
             if not schemas or iteration == max_tool_iterations:
                 tool_choice = 'none'
@@ -122,7 +121,12 @@ class SimpleAgent(Agent):
                 tool_choice = 'auto'
 
             logger.info(
-                f"🔄 进入第{iteration}次迭代：tool_choice={tool_choice}")
+                "🔄 Agent 迭代：agent=%s iteration=%d tool_choice=%s tools=%d",
+                self.name,
+                iteration,
+                tool_choice,
+                len(schemas),
+            )
 
             try:
                 response = self.llm.invoke(
@@ -207,8 +211,6 @@ class SimpleAgent(Agent):
             )
             
             for call in calls:
-                logger.info(
-                    f"🔧 Agent[{self.name}] 执行工具 iteration={iteration} tool={call.function.name} call_id={call.id}" )
                 observation = self._execute_tool_call(call)
                 self.add_message(observation)
 

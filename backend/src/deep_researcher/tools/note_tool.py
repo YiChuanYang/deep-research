@@ -65,7 +65,7 @@ class NoteTool(Tool):
         if action not in ("create", "read", "update"):
             raise ValueError("action 必须是 create/read/update")
 
-        logger.info(
+        logger.debug(
             "📝 笔记操作开始：action=%s note_id=%s task_id=%s",
             action,
             parameters.get("note_id"),

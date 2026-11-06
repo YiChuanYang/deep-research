@@ -46,7 +46,7 @@ class SearchTool(Tool):
                 raise ValueError("使用 tavily 后端请先配置 TAVILY_API_KEY")
             self._tavily_client = TavilyClient(api_key=api_key)
 
-        logger.info("✅ SearchTool 初始化成功 | backend=%s", self.backend)
+        logger.debug("✅ SearchTool 初始化成功 | backend=%s", self.backend)
 
     def run(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """统一入口：校验参数、分发后端、标准化返回"""
@@ -69,7 +69,7 @@ class SearchTool(Tool):
             raise ValueError("fetch_full_page 必须是布尔值")
 
         # 2. 按后端分发搜索（只拿原生结果，不做格式化）
-        logger.info(
+        logger.debug(
             "🔍 搜索开始 | backend=%s query_len=%d max_results=%d",
             self.backend,
             len(query),
@@ -86,7 +86,7 @@ class SearchTool(Tool):
         # 3. 统一标准化（两个后端共用同一套解析逻辑）
         results, notices = self._normalize_results(entries)
 
-        logger.info(
+        logger.debug(
             "✅ 搜索完成 | backend=%s results=%d notices=%d",
             self.backend,
             len(results),

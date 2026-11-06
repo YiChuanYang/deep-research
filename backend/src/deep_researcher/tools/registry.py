@@ -123,7 +123,7 @@ class ToolRegistry:
       ) -> Any:
           """保留原始返回值，让异常交给 Agent 处理。"""
           parameter_count = len(parameters) if isinstance(parameters, dict) else 0
-          logger.info(
+          logger.debug(
               "🔧 工具执行开始：tool=%s parameters=%d",
               name,
               parameter_count,
@@ -145,10 +145,9 @@ class ToolRegistry:
                   result = info["func"](**parameters)
 
           except Exception:
-              logger.exception("❌ 工具执行失败：tool=%s", name)
               raise
 
-          logger.info(
+          logger.debug(
               "✅ 工具执行完成：tool=%s result_type=%s",
               name,
               type(result).__name__,

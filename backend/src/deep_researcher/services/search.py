@@ -4,6 +4,7 @@ from typing import Any, Optional, Tuple
 from deep_researcher.tools.search_tool import SearchTool
 
 from deep_researcher.config import Configuration
+from deep_researcher.models import SummaryState
 from deep_researcher.utils import (
     deduplicate_and_format_sources,
     format_sources,
@@ -13,16 +14,18 @@ from deep_researcher.utils import (
 logger = logging.getLogger(__name__)
 
 MAX_TOKENS_PER_SOURCE = 2000
-_GLOBAL_SEARCH_TOOL = SearchTool()
 
 def dispatch_search(
     query: str,
     config: Configuration,
     loop_count: int=3,
+    *,
+    search_tool: SearchTool | None = None,
 ) -> Tuple[dict[str, Any] | None, list[str], Optional[str], str]:
     """Execute configured search backend and normalise response payload."""
 
     search_api = get_config_value(config.search_api)
+    active_search_tool = search_tool or SearchTool(config=config)
 
     logger.info(
         "🔎 搜索开始：backend=%s loop=%d query_chars=%d max_results=5",
@@ -31,7 +34,7 @@ def dispatch_search(
         len(query),
     )
     try:
-        raw_response = _GLOBAL_SEARCH_TOOL.run(
+        raw_response = active_search_tool.run(
             {
                 "input": query,
                 "backend": search_api,
@@ -116,3 +119,40 @@ def prepare_research_context(
     )
 
     return sources_summary, context
+
+
+class SearchService:
+    """执行单个任务的搜索，并将结果写入共享 SummaryState。"""
+
+    def __init__(self, config: Configuration) -> None:
+        self._config = config
+        self._search_tool = SearchTool(config=config)
+
+    def search_task(self, state: SummaryState, task_id: int) -> None:
+        task = state.get_task(task_id)
+        loop_count = state.research_loop_count + 1
+
+        payload, notices, answer_text, backend = dispatch_search(
+            task.query,
+            self._config,
+            loop_count,
+            search_tool=self._search_tool,
+        )
+        sources_summary, context = prepare_research_context(
+            payload,
+            answer_text,
+        )
+
+        task.sources_summary = sources_summary
+        task.notices = notices
+        state.search_contexts[task_id] = context
+        state.sources_gathered.append(sources_summary)
+        state.web_research_results.append(context)
+        state.research_loop_count = loop_count
+
+        logger.info(
+            "🔎 任务搜索结果已写入状态：task_id=%d backend=%s sources=%d",
+            task_id,
+            backend,
+            len(payload.get("results", [])) if payload else 0,
+        )

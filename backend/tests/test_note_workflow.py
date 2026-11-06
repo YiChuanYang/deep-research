@@ -12,10 +12,13 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessageFunctionToolC
 
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
-from deep_researcher.config import Configuration
+from deep_researcher.config import Configuration, SearchAPI
 from deep_researcher.llm.llm import MyLLM
 from deep_researcher.models import SummaryState, TodoItem
+from deep_researcher.services.note_service import NoteService
 from deep_researcher.services.planner import PlanningService
+from deep_researcher.services.reporter import ReportingService
+from deep_researcher.services.search import SearchService
 from deep_researcher.services.summarizer import SumarizationService
 from deep_researcher.services.tool_events import ToolCallTracker
 from deep_researcher.tools.note_tool import NoteTool
@@ -144,7 +147,11 @@ def make_service(
         enable_notes=enable_notes,
         notes_workspace=str(note_tool._workspace),
     )
-    state = SummaryState(research_topic="模型能力", todo_items=[task])
+    state = SummaryState(
+        research_topic="模型能力",
+        todo_items=[task],
+        search_contexts={task.id: "搜索素材"},
+    )
     tracker = ToolCallTracker(state, config.notes_workspace)
     registry = ToolRegistry()
     if enable_notes:
@@ -165,7 +172,10 @@ def make_service(
     service = SumarizationService(
         factory,
         config,
-        note_tool=note_tool if enable_notes else None,
+        note_service=NoteService(
+            config,
+            note_tool if enable_notes else None,
+        ),
     )
     return service, state, agent, llm
 
@@ -280,43 +290,30 @@ def test_summary_creates_real_note_without_model_tool_call(
     task: TodoItem,
 ) -> None:
     service, state, agent, _ = make_service(note_tool, task, [answer()])
-    summary = service.summarize_task(task, state, "搜索素材")
+    summary = service.summarize_task(state, task.id)
     saved = note_tool.run({"action": "read", "note_id": task.note_id})
 
-    assert saved["content"] == f"{summary}\n\n## 参考来源\n{task.sources_summary}"
+    assert not agent.enable_tool_call
+    assert saved["content"].startswith(f"# 任务 {task.id}: {task.title}")
+    assert f"## 摘要\n{summary}" in saved["content"]
+    assert f"## 参考来源\n{task.sources_summary}" in saved["content"]
     assert task.summary == summary
     assert task.status == "completed"
     assert agent._history == []
 
 
-def test_model_created_note_is_reused_and_final_content_replaced(
+def test_summary_agent_is_not_given_note_tool_schema(
     note_tool: NoteTool,
     task: TodoItem,
 ) -> None:
-    service, state, _, llm = make_service(
-        note_tool,
-        task,
-        [
-            tool_response(
-                {
-                    "action": "create",
-                    "task_id": 1,
-                    "content": "模型初步分析",
-                }
-            ),
-            answer("## 任务总结\n最终核对后的结论"),
-        ],
-    )
-    summary = service.summarize_task(task, state, "搜索素材")
-    tool_message = llm.requests[1]["messages"][-1]
-    model_created = json.loads(tool_message["content"])
+    service, state, _, llm = make_service(note_tool, task, [answer()])
+    service.summarize_task(state, task.id)
 
-    assert tool_message["role"] == "tool"
-    assert task.note_id == model_created["note_id"]
+    assert llm.requests[0]["tools"] == []
     assert len(list(note_tool._workspace.glob("note_*.json"))) == 1
     saved = note_tool.run({"action": "read", "note_id": task.note_id})
-    assert saved["content"].startswith(summary)
-    assert "模型初步分析" not in saved["content"]
+    assert saved["content"].startswith(f"# 任务 {task.id}: {task.title}")
+    assert "## 摘要\n## 任务总结" in saved["content"]
 
 
 def test_existing_note_is_read_into_prompt_and_replaced(
@@ -336,8 +333,9 @@ def test_existing_note_is_read_into_prompt_and_replaced(
         task,
         [answer("整合后的结论"), answer("整合后的结论")],
     )
+    state.search_contexts[task.id] = "本轮新素材"
     for _ in range(2):
-        service.summarize_task(task, state, "本轮新素材")
+        service.summarize_task(state, task.id)
 
     assert "上一轮研究证据" in llm.requests[0]["messages"][-1]["content"]
     assert "本轮新素材" in llm.requests[0]["messages"][-1]["content"]
@@ -352,7 +350,7 @@ def test_missing_note_is_recreated(
 ) -> None:
     task.note_id = "note_000000000000"
     service, state, _, _ = make_service(note_tool, task, [answer()])
-    service.summarize_task(task, state, "素材")
+    service.summarize_task(state, task.id)
     assert task.note_id != "note_000000000000"
     assert task.note_path is not None and Path(task.note_path).is_file()
     assert any("不存在" in notice for notice in task.notices)
@@ -367,7 +365,7 @@ def test_corrupt_note_is_not_silently_overwritten(
     path.write_text("{broken", encoding="utf-8")
     service, state, _, llm = make_service(note_tool, task, [answer()])
     with pytest.raises(json.JSONDecodeError):
-        service.summarize_task(task, state, "素材")
+        service.summarize_task(state, task.id)
     assert path.read_text(encoding="utf-8") == "{broken"
     assert llm.requests == []
     assert task.status == "failed"
@@ -400,7 +398,7 @@ def test_failed_generation_does_not_commit_note(
     task.summary = "上次有效摘要"
     service, state, agent, _ = make_service(note_tool, task, [response])
     with pytest.raises((RuntimeError, ValueError)):
-        service.summarize_task(task, state, "素材")
+        service.summarize_task(state, task.id)
     assert task.status == "failed"
     assert task.summary == "上次有效摘要"
     assert (
@@ -426,7 +424,7 @@ def test_persistence_failure_does_not_mark_task_completed(
     service, state, _, _ = make_service(note_tool, task, [answer()])
     monkeypatch.setattr(note_tool, "_save", fail_write)
     with pytest.raises(OSError, match="保存失败"):
-        service.summarize_task(task, state, "素材")
+        service.summarize_task(state, task.id)
     assert task.status == "failed"
     assert task.summary is None
     assert task.note_id is None
@@ -443,7 +441,7 @@ def test_disabled_notes_skip_guidance_and_storage(
         [answer()],
         enable_notes=False,
     )
-    service.summarize_task(task, state, "素材")
+    service.summarize_task(state, task.id)
     assert "笔记协作" not in llm.requests[0]["messages"][-1]["content"]
     assert not list(note_tool._workspace.glob("note_*.json"))
     assert task.status == "completed"
@@ -575,3 +573,69 @@ def test_agent_iteration_limit_raises_instead_of_returning_error_text() -> None:
     agent = SimpleAgent(name="test", llm=cast(MyLLM, llm))
     with pytest.raises(RuntimeError, match="迭代已达到上限"):
         agent.run("请求", max_tool_iterations=0)
+
+
+def test_search_service_writes_results_into_shared_state(
+    monkeypatch: pytest.MonkeyPatch,
+    task: TodoItem,
+) -> None:
+    import deep_researcher.services.search as search_module
+
+    config = Configuration(search_api=SearchAPI.DUCKDUCKGO)
+    state = SummaryState(research_topic="模型能力", todo_items=[task])
+    payload = {
+        "backend": "duckduckgo",
+        "answer": None,
+        "notices": [],
+        "results": [
+            {
+                "title": "来源标题",
+                "url": "https://example.com/source",
+                "content": "来源内容",
+            }
+        ],
+    }
+
+    def fake_dispatch(query, config, loop_count, *, search_tool=None):
+        assert query == task.query
+        return payload, [], None, "duckduckgo"
+
+    monkeypatch.setattr(search_module, "dispatch_search", fake_dispatch)
+    SearchService(config).search_task(state, task.id)
+
+    assert state.search_contexts[task.id]
+    assert task.sources_summary == "* 来源标题 : https://example.com/source"
+    assert state.research_loop_count == 1
+
+
+def test_reporter_reads_completed_tasks_from_state() -> None:
+    state = SummaryState(
+        research_topic="模型能力",
+        todo_items=[
+            TodoItem(
+                id=1,
+                title="基准比较",
+                intent="比较模型能力",
+                query="model benchmark",
+                status="completed",
+                summary="已验证的摘要",
+                sources_summary="* 来源：https://example.com/source",
+            )
+        ],
+    )
+    llm = ScriptedLLM([answer("# 研究报告\n主要结论")])
+    reporter = ReportingService(
+        lambda: SimpleAgent(
+            name="reporter-test",
+            llm=cast(MyLLM, llm),
+        )
+    )
+
+    report = reporter.generate_report(state)
+
+    assert report == "# 研究报告\n主要结论"
+    assert state.structured_report == report
+    assert state.running_summary == report
+    prompt = llm.requests[0]["messages"][-1]["content"]
+    assert "已验证的摘要" in prompt
+    assert "https://example.com/source" in prompt
