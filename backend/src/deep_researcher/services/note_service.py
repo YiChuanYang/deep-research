@@ -115,6 +115,4 @@ class NoteService:
         state.report_note_id = saved["note_id"]
         state.report_note_path = saved["note_path"]
         logger.info(
-            "📝 最终报告笔记已保存：note_id=%s",
-            state.report_note_id,
-        )
+            f"📝 最终报告笔记已保存：note_id={state.report_note_id},path={state.report_note_path}")
