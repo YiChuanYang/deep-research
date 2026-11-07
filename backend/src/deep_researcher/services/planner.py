@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from time import perf_counter
 from typing import Any, List
 
 from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
@@ -56,9 +57,10 @@ class PlanningService:
                 "required": ["tasks"]
             }
         )
-    @log_operation("研究规划")
+    @log_operation("研究规划", state_parameter="state")
     def plan_todo_list(self,state:SummaryState)->List[TodoItem]:
         """通过监听器捕捉结构化参数，构造todoitem"""
+        started_at = perf_counter()
         #拼接运行时提示词
         prompt = todo_planner_instructions.format(
             current_date = get_current_date(),
@@ -104,7 +106,7 @@ class PlanningService:
 
         self._agent.tool_call_listener = capture_and_forward
         try:
-            logger.info("正在规划研究任务")
+            logger.info("正在规划研究任务", extra={"event": "plan_started"})
             self._agent.run(
                 input_text=prompt,
                 tool_choice="required"
@@ -143,7 +145,12 @@ class PlanningService:
         state.todo_items = todo_items
         logger.info(
             "规划完成 · %d 个任务", len(todo_items),
-            extra={"event": "plan_completed", "task_count": len(todo_items)},
+            extra={
+                "event": "plan_completed",
+                "task_count": len(todo_items),
+                "used_fallback": used_fallback,
+                "duration_s": round(perf_counter() - started_at, 3),
+            },
         )
         return todo_items
 

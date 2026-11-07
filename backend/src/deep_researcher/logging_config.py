@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import sys
+import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -27,7 +28,10 @@ _HANDLER_TAG = "_deep_research_handler"
 _ERROR_TAG = "_deep_research_error_id"
 _DEFAULT_DIR = Path(__file__).resolve().parents[2] / "logs"
 _BUILTIN_FIELDS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
-_CONTEXT_FIELDS = ("run_id", "task_id", "stage", "agent")
+_CONTEXT_FIELDS = (
+    "run_id", "execution_id", "task_id", "task_position", "task_count",
+    "stage", "research_stage", "checkpoint", "agent",
+)
 _COMPONENTS: dict[str, tuple[str, str]] = {
     "deep_researcher": ("🚀", "research"),
     "deep_researcher.task": ("📋", "research.task"),
@@ -43,6 +47,7 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "tools.registry": ("🧰", "tools.registry"),
     "tools.search_tool": ("🧰", "tools.search"),
     "tools.note_tool": ("🧰", "tools.note"),
+    "repository": ("🗄️", "storage.repository"),
 }
 _PREFIXES = (
     "✅",
@@ -62,6 +67,8 @@ _PREFIXES = (
     "🔌",
     "🧰",
     "🪝",
+    "🗄️",
+    "🧾",
     "👂",
     "🔧",
     "🧹",
@@ -99,9 +106,9 @@ def _exception_chain(error: BaseException) -> list[BaseException]:
     while current is not None and id(current) not in seen:
         seen.add(id(current))
         chain.append(current)
-        current = current.__cause__ or (
-            None if current.__suppress_context__ else current.__context__
-        )
+        # 只沿显式原因去重；处理原异常时发生的另一异常应单独记录。
+        # formatException 仍会保留包含隐式 context 的完整堆栈。
+        current = current.__cause__
     return chain
 
 
@@ -111,11 +118,14 @@ def log_exception_once(
     *args: object,
     error: BaseException,
     level: int = logging.ERROR,
-) -> None:
+    extra: dict[str, Any] | None = None,
+) -> str:
     """同一异常向上传递时只记录一次完整堆栈，保留原始原因."""
     chain = _exception_chain(error)
-    if any(getattr(item, _ERROR_TAG, None) for item in chain):
-        return
+    for item in chain:
+        existing_id = getattr(item, _ERROR_TAG, None)
+        if existing_id:
+            return str(existing_id)
     error_id = "E" + uuid4().hex[:8].upper()
     for item in chain:
         setattr(item, _ERROR_TAG, error_id)
@@ -124,14 +134,17 @@ def log_exception_once(
         message,
         *args,
         exc_info=(type(error), error, error.__traceback__),
-        extra={"error_id": error_id},
+        extra={**(extra or {}), "error_id": error_id},
     )
+    return error_id
 
 
 def log_operation(
     stage: str,
     *,
     task_parameter: str | None = None,
+    state_parameter: str | None = None,
+    checkpoint: str | None = None,
     new_run: bool = False,
     report_errors: bool = True,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
@@ -144,13 +157,24 @@ def log_operation(
         @wraps(func)
         def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             fields: dict[str, Any] = {"stage": stage}
+            bound = signature.bind(*args, **kwargs)
+            bound.apply_defaults()
             if new_run or not _CONTEXT.get().get("run_id"):
                 fields["run_id"] = new_run_id()
             if new_run:
                 fields["task_id"] = None
             if task_parameter is not None:
-                bound = signature.bind(*args, **kwargs)
                 fields["task_id"] = bound.arguments[task_parameter]
+            if state_parameter is not None:
+                state = bound.arguments[state_parameter]
+                # 独立运行服务 demo 时也使用实际研究编号，不使用入口临时编号。
+                state_run_id = getattr(state, "run_id", None)
+                if state_run_id:
+                    fields["run_id"] = state_run_id
+                if task_parameter is None:
+                    fields["task_id"] = None
+            if checkpoint is not None:
+                fields["checkpoint"] = checkpoint
             if args and hasattr(args[0], "name"):
                 fields["agent"] = args[0].name
             with log_context(**fields):
@@ -158,7 +182,10 @@ def log_operation(
                     return func(*args, **kwargs)
                 except Exception as exc:
                     if report_errors:
-                        log_exception_once(operation_logger, "%s失败", stage, error=exc)
+                        log_exception_once(
+                            operation_logger, "%s失败", stage, error=exc,
+                            extra={"event": "operation_failed"},
+                        )
                     raise
 
         return wrapped
@@ -185,6 +212,26 @@ def _component(name: str) -> tuple[str, str]:
     return "📦", short
 
 
+def _display_run_id(value: object) -> str:
+    """控制台显示短编号；JSON 日志仍保留完整编号."""
+    text = str(value or "—")
+    if re.fullmatch(r"[0-9a-f]{32}", text):
+        return "R" + text[:8].upper()
+    return text
+
+
+def _pad_display(text: str, width: int) -> str:
+    """按终端显示宽度补空格，避免中文阶段名称使分栏错位."""
+    used = sum(
+        0 if unicodedata.combining(char) or char in "\ufe0e\ufe0f"
+        else 2 if unicodedata.east_asian_width(char) in "WF" else 1
+        for char in text
+    )
+    if text.endswith("\ufe0f"):
+        used = max(2, used)
+    return text + " " * max(0, width - used)
+
+
 class ContextFilter(logging.Filter):
     """将上下文写入记录，控制台和文件得到一致的追踪字段."""
 
@@ -197,7 +244,7 @@ class ContextFilter(logging.Filter):
 
 
 class ConsoleFormatter(logging.Formatter):
-    """方案 A：时间、等级、模块、研究编号、任务编号与正文分栏."""
+    """方案 A：时间、等级、模块、研究编号、任务编号、操作与正文分栏."""
 
     def __init__(
         self,
@@ -219,11 +266,13 @@ class ConsoleFormatter(logging.Formatter):
         icon, component = _component(record.name)
         stamp = self.formatTime(record, self.datefmt)
         level = "WARN" if record.levelno == logging.WARNING else record.levelname
-        run_id = str(getattr(record, "run_id", None) or "—")
+        run_id = _display_run_id(getattr(record, "run_id", None))
         task_id = getattr(record, "task_id", None)
         task = f"T{task_id:02d}" if type(task_id) is int else str(task_id or "—")
+        stage = str(getattr(record, "stage", None) or "—")
         message = " ↵ ".join(_clean_message(record.getMessage()).splitlines())
-        label = f"{icon if self.emoji else '-'} {component:<21}"
+        display_icon = icon if self.emoji else "-"
+        label = f"{_pad_display(display_icon, 2)} {component:<21}"
         if self.color:
             code = (
                 "31"
@@ -240,7 +289,10 @@ class ConsoleFormatter(logging.Formatter):
             message = f"\x1b[{code}m{message}\x1b[0m"
         else:
             level = f"{level:<5}"
-        result = f"{stamp} {level} {label} {run_id:<9} {task:<4} │ {message}"
+        result = (
+            f"{stamp} {level} {label} {run_id:<9} {task:<4} "
+            f"{_pad_display(stage, 12)} │ {message}"
+        )
         if record.exc_info and record.exc_info[1] is not None:
             root = _exception_chain(record.exc_info[1])[-1]
             reason = " ".join(_ANSI.sub("", str(root)).split())[:500]
@@ -339,7 +391,7 @@ def setup_logging(
     active_stream = stream if stream is not None else sys.stderr
     encoding = active_stream.encoding or "utf-8"
     try:
-        "🚀🧭🔎🧠📝📒🤖🔌🧰🪝".encode(encoding)
+        "🚀🧭🔎🧠📝📒🤖🔌🧰🪝🗄️".encode(encoding)
         emoji = True
     except UnicodeEncodeError:
         emoji = False

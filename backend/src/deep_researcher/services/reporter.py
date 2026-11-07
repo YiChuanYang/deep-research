@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from time import perf_counter
 
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.logging_config import log_operation
@@ -19,8 +20,9 @@ class ReportingService:
     def __init__(self, agent_factory: Callable[[], SimpleAgent]) -> None:
         self._agent_factory = agent_factory
 
-    @log_operation("报告生成")
+    @log_operation("报告生成", state_parameter="state")
     def generate_report(self, state: SummaryState) -> str:
+        started_at = perf_counter()
         completed_tasks = [
             task
             for task in state.todo_items
@@ -60,5 +62,14 @@ class ReportingService:
 
         state.structured_report = report
         state.running_summary = report
-        logger.debug("✅ 研究报告生成完成：chars=%d", len(report))
+        duration = perf_counter() - started_at
+        logger.info(
+            "报告已生成 · %d 字 · 耗时=%.2fs", len(report), duration,
+            extra={
+                "event": "report_completed",
+                "report_chars": len(report),
+                "task_count": len(completed_tasks),
+                "duration_s": round(duration, 3),
+            },
+        )
         return report

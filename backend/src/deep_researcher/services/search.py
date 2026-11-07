@@ -34,6 +34,7 @@ def dispatch_search(
 
     logger.info(
         "正在检索 · backend=%s", search_api,
+        extra={"event": "search_started", "backend": search_api},
     )
     try:
         raw_response = active_search_tool.run(
@@ -133,7 +134,7 @@ class SearchService:
         self._config = config
         self._search_tool = SearchTool(config=config)
 
-    @log_operation("任务搜索", task_parameter="task_id")
+    @log_operation("任务搜索", task_parameter="task_id", state_parameter="state", checkpoint="search")
     def search_task(self, state: SummaryState, task_id: int) -> None:
         task = state.get_task(task_id)
         loop_count = state.research_loop_count + 1

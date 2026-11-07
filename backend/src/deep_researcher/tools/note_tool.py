@@ -83,7 +83,20 @@ class NoteTool(Tool):
         key = NoteKey(run_id=run_id, task_id=task_id)
 
         with self._lock:
-            return self._read(key)
+            note = self._read(key)
+
+        logger.debug(
+            "笔记读取 · %s", "命中" if note is not None else "尚未创建",
+            extra={
+                "event": "note_read",
+                "run_id": run_id,
+                "task_id": task_id,
+                "note_id": key.note_id,
+                "note_path": str(self._path(key)),
+                "found": note is not None,
+            },
+        )
+        return note
 
     def save(
         self,
@@ -103,12 +116,20 @@ class NoteTool(Tool):
 
         with self._lock:
             # 已有文件必须合法，避免静默覆盖损坏的数据。
-            self._read(note)
+            previous = self._read(note)
             self._write(note)
 
         logger.debug(
-            "笔记正文已写入 · note_id=%s",
-            note.note_id,
+            "笔记文件已%s", "创建" if previous is None else "替换",
+            extra={
+                "event": "note_written",
+                "run_id": run_id,
+                "task_id": task_id,
+                "note_id": note.note_id,
+                "note_path": str(self._path(note)),
+                "note_created": previous is None,
+                "content_chars": len(note.content),
+            },
         )
 
         return note.model_copy(

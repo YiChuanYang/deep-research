@@ -120,14 +120,24 @@ class DeepResearcher:
         )
         with log_context(
             run_id=state.run_id,
+            execution_id=uuid4().hex,
             task_id=None,
             stage="新建研究",
+            research_stage=None,
+            checkpoint=None,
         ):
-            self._repository.create(record)
+            try:
+                self._repository.create(record)
+            except Exception as exc:
+                log_exception_once(
+                    logger, "研究记录创建失败", error=exc,
+                    extra={"event": "research_create_failed", "research_stage": record.stage},
+                )
+                raise
             logger.info(
                 "开始研究 · %s",
                 state.research_topic,
-                extra={"event": "research_started"},
+                extra={"event": "research_started", "research_stage": "plan", "max_tasks": max_tasks},
             )
 
             return self._drive(state.run_id)
@@ -142,10 +152,19 @@ class DeepResearcher:
         """普通失败直接恢复；强制接管要求旧进程已停止。"""
         with log_context(
             run_id=run_id,
+            execution_id=uuid4().hex,
             task_id=None,
             stage="恢复研究",
+            research_stage=None,
+            checkpoint=None,
         ):
-            logger.info("准备恢复研究")
+            logger.info(
+                "准备恢复研究",
+                extra={
+                    "event": "research_resume_requested",
+                    "recover_interrupted": recover_interrupted,
+                },
+            )
 
             return self._drive(
                 run_id,
@@ -166,7 +185,10 @@ class DeepResearcher:
         self._state = state
         started_at = perf_counter()
         if record.status == "completed":
-            logger.info("研究已完成 · 返回已有报告")
+            logger.info(
+                "研究已完成 · 返回已有报告",
+                extra={"event": "research_reused", "research_stage": "done"},
+            )
             return self._to_output(state)
 
         try:
@@ -177,12 +199,14 @@ class DeepResearcher:
 
             record.last_error = None
 
-            logger.info(
-                "继续执行 · stage=%s",
+            logger.debug(
+                "进入调度 · stage=%s",
                 record.stage,
+                extra={"event": "execution_started", "research_stage": record.stage},
             )
             if record.stage == "plan":
-                self._plan(state)
+                with log_context(research_stage="plan"):
+                    self._plan(state)
                 record.stage = 'tasks'
                 self._repository.update(record)
 
@@ -195,19 +219,27 @@ class DeepResearcher:
                     else state.todo_items[:record.max_tasks]
                 )
 
-                for task in tasks:
+                for position, task in enumerate(tasks, start=1):
                     if task.checkpoint == "done":
                         logger.debug(
                             "复用任务结果 · task_id=%d",
                             task.id,
+                            extra={
+                                "event": "task_reused",
+                                "task_id": task.id,
+                                "research_stage": "tasks",
+                                "checkpoint": task.checkpoint,
+                                "task_status": task.status,
+                            },
                         )
                         continue
 
-                    self._execute_task(
-                        record,
-                        task.id,
-                        notes,
-                    )
+                    with log_context(
+                        research_stage="tasks",
+                        task_position=position,
+                        task_count=len(tasks),
+                    ):
+                        self._execute_task(record, task.id, notes)
 
                 if not any(
                     task.status == "completed"
@@ -226,7 +258,8 @@ class DeepResearcher:
                     self._create_reporter_agent
                 )
 
-                report = reporter.generate_report(state)
+                with log_context(research_stage="report", checkpoint=None):
+                    report = reporter.generate_report(state)
                 report = self._append_scope_notice(
                     state,
                     report,
@@ -241,9 +274,8 @@ class DeepResearcher:
                 self._repository.update(record)
 
             if record.stage == "save_report":
-                NoteService(
-                    self._config
-                ).save_report_note(state)
+                with log_context(research_stage="save_report", checkpoint=None):
+                    NoteService(self._config).save_report_note(state)
 
                 record.stage = "done"
 
@@ -255,38 +287,72 @@ class DeepResearcher:
                     status="completed",
                 )
 
+            duration = perf_counter() - started_at
+            completed = sum(task.status == "completed" for task in state.todo_items)
+            skipped = sum(task.status == "skipped" for task in state.todo_items)
             logger.info(
-                "研究完成 · 本次执行耗时=%.2fs",
-                perf_counter() - started_at,
-                extra={"event": "research_completed"},
+                "研究完成 · 完成=%d 跳过=%d 未执行=%d · 本次耗时=%.2fs",
+                completed, skipped, len(state.todo_items) - completed - skipped, duration,
+                extra={
+                    "event": "research_completed",
+                    "research_stage": "done",
+                    "status": record.status,
+                    "completed_tasks": completed,
+                    "skipped_tasks": skipped,
+                    "task_count": len(state.todo_items),
+                    "duration_s": round(duration, 3),
+                },
             )
 
             return self._to_output(state)
 
-        except RunOwnerShipError:
+        except RunOwnerShipError as exc:
             # 执行权已失效，不能覆盖其他执行者的状态。
+            log_exception_once(
+                logger, "研究停止 · 执行权已失效", error=exc,
+                extra={"event": "research_ownership_lost", "research_stage": record.stage},
+            )
             raise
 
         except Exception as exc:
+            error_id = log_exception_once(
+                logger, "研究执行失败", error=exc,
+                extra={"event": "operation_failed", "research_stage": record.stage},
+            )
             record.last_error = (
                 f"{type(exc).__name__}: {exc}"
             )
 
+            failure_saved = False
             try:
                 self._repository.update(
                     record,
                     status="failed",
                 )
+                failure_saved = True
             except Exception as save_error:
                 log_exception_once(
                     logger,
                     "故障状态保存失败 · "
                     "保留数据库上次成功的检查点",
                     error=save_error,
+                    extra={
+                        "event": "failure_checkpoint_failed",
+                        "research_stage": record.stage,
+                        "related_error_id": error_id,
+                    },
                 )
 
             logger.warning(
-                "研究已中止 · 可用同一 run_id 恢复"
+                "研究已中止 · stage=%s · run_id=%s",
+                record.stage, state.run_id,
+                extra={
+                    "event": "research_failed",
+                    "research_stage": record.stage,
+                    "error_id": error_id,
+                    "failure_saved": failure_saved,
+                    "duration_s": round(perf_counter() - started_at, 3),
+                },
             )
             raise
                 
@@ -322,15 +388,18 @@ class DeepResearcher:
         """从任务检查点继续搜索、总结或笔记保存。"""
         state = record.state
         task = state.get_task(task_id)
+        started_at = perf_counter()
 
         task.status = "running"
         task.last_error = None
-        self._repository.update(record)
+        with log_context(checkpoint=task.checkpoint):
+            self._repository.update(record)
 
         task_logger.info(
             "开始 · %s · checkpoint=%s",
             task.title,
             task.checkpoint,
+            extra={"event": "task_started", "checkpoint": task.checkpoint},
         )
 
         try:
@@ -348,11 +417,17 @@ class DeepResearcher:
                         "搜索没有可用素材"
                     )
 
-                    self._repository.update(record)
+                    with log_context(checkpoint=task.checkpoint):
+                        self._repository.update(record)
+                    task_logger.warning(
+                        "任务跳过 · 搜索没有可用素材",
+                        extra={"event": "task_skipped", "checkpoint": "done", "reason": "empty_search"},
+                    )
                     return
 
                 task.checkpoint = "summarize"
-                self._repository.update(record)
+                with log_context(checkpoint=task.checkpoint):
+                    self._repository.update(record)
 
             if task.checkpoint == "summarize":
                 summarizer = SummarizationService(
@@ -378,24 +453,37 @@ class DeepResearcher:
                         "无有效研究信息，未纳入报告"
                     )
 
-                    self._repository.update(record)
+                    with log_context(checkpoint=task.checkpoint):
+                        self._repository.update(record)
+                    task_logger.warning(
+                        "任务跳过 · 无有效研究信息",
+                        extra={"event": "task_skipped", "checkpoint": "done", "reason": "empty_summary"},
+                    )
                     return
 
                 task.checkpoint = "save_note"
 
                 # 先保存摘要正文，再尝试保存笔记文件。
-                self._repository.update(record)
+                with log_context(checkpoint=task.checkpoint):
+                    self._repository.update(record)
 
             if task.checkpoint == "save_note":
                 notes.save_task_note(state, task_id)
 
                 task.status = "completed"
                 task.checkpoint = "done"
-                self._repository.update(record)
+                with log_context(checkpoint=task.checkpoint):
+                    self._repository.update(record)
 
                 task_logger.info(
-                    "任务完成 · %s",
-                    task.title,
+                    "任务完成 · 耗时=%.2fs",
+                    perf_counter() - started_at,
+                    extra={
+                        "event": "task_completed",
+                        "checkpoint": "done",
+                        "task_status": task.status,
+                        "duration_s": round(perf_counter() - started_at, 3),
+                    },
                 )
 
         except Exception as exc:
@@ -406,6 +494,19 @@ class DeepResearcher:
                 )
 
             # 由 _drive 统一保存失败状态。
+            error_id = log_exception_once(
+                task_logger, "任务执行失败", error=exc,
+                extra={"event": "operation_failed", "checkpoint": task.checkpoint},
+            )
+            task_logger.warning(
+                "任务中止 · 恢复位置=%s", task.checkpoint,
+                extra={
+                    "event": "task_failed",
+                    "checkpoint": task.checkpoint,
+                    "error_id": error_id,
+                    "task_status": task.status,
+                },
+            )
             raise
 
     @staticmethod

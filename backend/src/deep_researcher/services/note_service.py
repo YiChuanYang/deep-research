@@ -32,6 +32,7 @@ class NoteService:
     @log_operation(
         "读取任务笔记",
         task_parameter="task_id",
+        state_parameter="state",
     )
     def load_task_note(
         self,
@@ -39,6 +40,7 @@ class NoteService:
         task_id: int,
     ) -> str:
         if self._tool is None:
+            logger.debug("笔记功能已关闭 · 跳过读取", extra={"event": "note_read_disabled"})
             return ""
 
         task = state.get_task(task_id)
@@ -51,7 +53,8 @@ class NoteService:
         if note is None:
             if task.note_id:
                 logger.warning(
-                    "关联笔记缺失 · 将在保存时重建"
+                    "关联笔记缺失 · 将在保存时重建",
+                    extra={"event": "note_link_missing", "note_id": task.note_id},
                 )
 
             task.note_id = None
@@ -65,6 +68,7 @@ class NoteService:
         logger.debug(
             "已有笔记已读取 · %d 字",
             len(note.content),
+            extra={"event": "task_note_loaded", "note_id": note.note_id, "content_chars": len(note.content)},
         )
 
         return note.content
@@ -72,6 +76,8 @@ class NoteService:
     @log_operation(
         "保存任务笔记",
         task_parameter="task_id",
+        state_parameter="state",
+        checkpoint="save_note",
     )
     def save_task_note(
         self,
@@ -79,6 +85,7 @@ class NoteService:
         task_id: int,
     ) -> None:
         if self._tool is None:
+            logger.debug("笔记功能已关闭 · 跳过保存", extra={"event": "note_save_disabled"})
             return
 
         task = state.get_task(task_id)
@@ -109,20 +116,23 @@ class NoteService:
         task.note_path = saved.note_path
 
         logger.info(
-            "任务笔记已保存 · %s",
-            saved.note_id,
+            "任务笔记已保存 · %d 字",
+            len(saved.content),
             extra={
                 "event": "task_note_saved",
+                "note_id": saved.note_id,
                 "note_path": saved.note_path,
+                "content_chars": len(saved.content),
             },
         )
 
-    @log_operation("保存报告笔记")
+    @log_operation("保存报告笔记", state_parameter="state")
     def save_report_note(
         self,
         state: SummaryState,
     ) -> None:
         if self._tool is None:
+            logger.debug("笔记功能已关闭 · 跳过报告保存", extra={"event": "note_save_disabled"})
             return
 
         if (
@@ -146,10 +156,12 @@ class NoteService:
         state.report_note_path = saved.note_path
 
         logger.info(
-            "报告已保存 · %s",
-            saved.note_path,
+            "报告笔记已保存 · %d 字",
+            len(saved.content),
             extra={
                 "event": "report_note_saved",
                 "note_id": saved.note_id,
+                "note_path": saved.note_path,
+                "content_chars": len(saved.content),
             },
         )

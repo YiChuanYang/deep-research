@@ -36,7 +36,7 @@ class SummarizationService:
             config.enable_notes,
         )
 
-    @log_operation("任务总结", task_parameter="task_id")
+    @log_operation("任务总结", task_parameter="task_id", state_parameter="state", checkpoint="summarize")
     def summarize_task(
         self,
         state: SummaryState,
@@ -52,7 +52,7 @@ class SummarizationService:
         task.status = "running"
 
         agent: SimpleAgent | None = None
-        logger.info("正在生成摘要")
+        logger.info("正在生成摘要", extra={"event": "summary_started", "persist_note": persist_note})
 
         try:
             context = state.search_contexts.get(task_id)

@@ -57,6 +57,11 @@ class ResearchRepository:
                 )
             """)
 
+        logger.debug(
+            "研究仓储已就绪 · database=%s", target,
+            extra={"event": "repository_ready", "database": target},
+        )
+
 
     @staticmethod
     def _now() -> str:
@@ -140,9 +145,15 @@ class ResearchRepository:
              self._now()
      ),
             )
-        logger.info(
+        logger.debug(
             "研究记录已创建 · stage=%s",
             record.stage,
+            extra={
+                "event": "research_record_created",
+                "run_id": record.state.run_id,
+                "research_stage": record.stage,
+                "status": record.status,
+            },
         )
 
     def load(self,run_id:str)->ResearchRecord:
@@ -154,7 +165,17 @@ class ResearchRepository:
 
         if not row:
             raise KeyError(f"{run_id}研究不存在")
-        return self._decode(row)
+        record = self._decode(row)
+        logger.debug(
+            "研究快照已读取 · stage=%s status=%s", record.stage, record.status,
+            extra={
+                "event": "research_record_loaded",
+                "run_id": run_id,
+                "research_stage": record.stage,
+                "status": record.status,
+            },
+        )
+        return record
 
 
     
@@ -170,6 +191,7 @@ class ResearchRepository:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             record =self.load(run_id)
+            previous_status = record.status
 
             if record.status == "completed":
                 return record
@@ -178,6 +200,15 @@ class ResearchRepository:
                 and 
                 not recover_interrupted
             ):
+                logger.warning(
+                    "研究正在执行 · 本次未取得执行权",
+                    extra={
+                        "event": "research_claim_rejected",
+                        "run_id": run_id,
+                        "research_stage": record.stage,
+                        "status": record.status,
+                    },
+                )
                 raise RunBusyError("当前并非从断点恢复且该研究正在被占用")
 
             #生成令牌
@@ -191,6 +222,18 @@ class ResearchRepository:
 """,(record.owner_token,self._now(),run_id),)
 
         record.status = 'running'
+        logger.log(
+            logging.INFO if previous_status in {"failed", "running"} else logging.DEBUG,
+            "执行权已取得 · stage=%s · 原状态=%s", record.stage, previous_status,
+            extra={
+                "event": "research_claimed",
+                "run_id": run_id,
+                "research_stage": record.stage,
+                "status": record.status,
+                "previous_status": previous_status,
+                "recover_interrupted": recover_interrupted,
+            },
+        )
         return record
 
     def update(self,
@@ -228,12 +271,22 @@ class ResearchRepository:
             "检查点已保存 · stage=%s status=%s",
             record.stage,
             status,
-            extra={"event": "checkpoint_saved"},
+            extra={
+                "event": "checkpoint_saved",
+                "run_id": record.state.run_id,
+                "research_stage": record.stage,
+                "status": status,
+                "task_checkpoints": [
+                    {"task_id": task.id, "checkpoint": task.checkpoint, "status": task.status}
+                    for task in record.state.todo_items
+                ],
+            },
         )
 
     def close(self) -> None:
         """释放连接。"""
         self._db.close()
+        logger.debug("研究仓储已关闭", extra={"event": "repository_closed"})
 
 
 
