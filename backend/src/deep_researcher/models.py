@@ -1,5 +1,8 @@
 from dataclasses import dataclass ,field #内部流转数据，使用dataclass 不用pydantic 减少开销
-from typing import List, Optional
+from typing import List, Optional,Literal,Any
+
+
+
 from typing_extensions import Annotated
 import operator
 @dataclass(kw_only=True) #kw_only=True表示只能使用关键字参数来初始化对象
@@ -9,7 +12,21 @@ class TodoItem:
     title: str
     intent: str
     query: str
-    status: str='pending'
+    status: Literal[
+    "pending",
+    "running",
+    "failed",
+    "completed",
+    "skipped",
+] = "pending"
+
+    checkpoint: Literal[
+    "search",
+    "summarize",
+    "save_note",
+    "done",
+] = "search"
+    last_error: str | None = None
     summary: Optional[str] = None
     sources_summary: Optional[str] = None
     #列表、字典和集合这些可变对象不能直接设置默认值
@@ -20,6 +37,7 @@ class TodoItem:
 
 @dataclass(kw_only=True)
 class SummaryState:
+    run_id :str =""
     research_topic: Optional[str] = field(default=None)  # Report topic
     search_query: Optional[str] = field(default=None)  # Deprecated placeholder
     # State owns task results; services address tasks by ID.
@@ -53,6 +71,20 @@ class SummaryState:
         return "\n".join(lines)
 
 
+#数据库类
+@dataclass
+class ResearchRecord:
+    """一次研究的状态、执行阶段和非敏感配置"""
+    state:SummaryState
+    config:dict[str,Any]
+    max_tasks:int|None=None
+    stage:Literal["plan","tasks","report","save_report","done"]="plan"
+    status:Literal["pending","running","failed","completed"]="pending"
+    last_error:str|None=None
+    #令牌,dataclass自动生成__repr__方法可以打印字段。repr=False表示打印时不输出该字段
+    owner_token:str|None=field(default=None,repr=False)
+
+
 
 @dataclass(kw_only=True)
 class SummaryStateInput:
@@ -61,6 +93,7 @@ class SummaryStateInput:
 
 @dataclass(kw_only=True)
 class SummaryStateOutput:
+    run_id :str =""
     running_summary: Optional[str] = field(default=None)  # Backward-compatible文本
     report_markdown: Optional[str] = field(default=None)
     todo_items: List[TodoItem] = field(default_factory=list)

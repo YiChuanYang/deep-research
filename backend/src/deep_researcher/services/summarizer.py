@@ -41,72 +41,108 @@ class SummarizationService:
         self,
         state: SummaryState,
         task_id: int,
+        *,
+        persist_note: bool = True,
     ) -> str:
-        """根据 state 中的任务与搜索上下文生成并持久化摘要."""
+        """生成任务摘要，并根据调用方要求决定是否保存笔记。"""
         started_at = perf_counter()
         task = state.get_task(task_id)
-        task.status = "in_progress"
+
+        # 与你当前 TodoItem.status 的定义保持一致。
+        task.status = "running"
+
         agent: SimpleAgent | None = None
         logger.info("正在生成摘要")
 
         try:
             context = state.search_contexts.get(task_id)
-            if not context:
-                raise ValueError(f"任务 {task_id} 没有搜索上下文")
 
-            previous_content = self._notes.load_task_note(state, task_id)
+            if not context or not context.strip():
+                raise ValueError(
+                    f"任务 {task_id} 没有搜索上下文"
+                )
+
+            previous_content = self._notes.load_task_note(
+                state,
+                task_id,
+            )
+
             prompt = self._build_prompt(
                 state,
                 task_id,
                 context,
                 previous_content,
             )
+
             agent = self._agent_factory()
             agent.enable_tool_call = False
 
             response = agent.run(input_text=prompt)
+
             if not isinstance(response, str):
                 raise TypeError("总结结果必须是字符串")
+
             summary = response.strip()
+
             if self.config.strip_thinking_tokens:
-                summary = strip_thinking_tokens(summary).strip()
+                summary = strip_thinking_tokens(
+                    summary
+                ).strip()
+
             if not summary:
                 raise ValueError("总结结果为空")
 
+            # 无论是否立即保存笔记，都先把正文放入共享 state。
             old_summary = task.summary
             task.summary = summary
-            try:
-                self._notes.save_task_note(state, task_id)
-            except Exception:
-                task.summary = old_summary
-                raise
-            task.status = "completed"
+
+            if persist_note:
+                try:
+                    self._notes.save_task_note(
+                        state,
+                        task_id,
+                    )
+                except Exception:
+                    # 保留原有行为：直接保存失败时恢复旧摘要。
+                    task.summary = old_summary
+                    raise
+
+                task.status = "completed"
+
+            # persist_note=False 时：
+            # 正文已更新，但任务仍为 running。
+            # 由工作流保存检查点、保存笔记，再标记 completed。
+
             logger.info(
-                "摘要完成 · %d 字 · 耗时=%.2fs",
-                len(summary), perf_counter() - started_at,
+                "摘要已生成 · %d 字 · 耗时=%.2fs",
+                len(summary),
+                perf_counter() - started_at,
                 extra={
                     "event": "summary_completed",
                     "summary_chars": len(summary),
                     "note_id": task.note_id,
-                    "duration_s": round(perf_counter() - started_at, 3),
+                    "persist_note": persist_note,
+                    "duration_s": round(
+                        perf_counter() - started_at,
+                        3,
+                    ),
                 },
             )
+
             return summary
 
         except Exception:
             task.status = "failed"
-            logger.debug(
-                "❌ 任务总结或笔记提交失败：task_id=%d note_id=%s",
-                task.id,
-                task.note_id,
-            )
+            # 装饰器负责记录异常，避免重复打印堆栈。
             raise
+
         finally:
             if agent is not None:
                 agent.clear_history()
+
                 logger.debug(
-                    "🧹 总结 Agent 历史已清理：task_id=%d",
-                    task.id,
+                    "总结 Agent 历史已清理 · task_id=%d",
+                    task_id,
                 )
 
     def _build_prompt(
