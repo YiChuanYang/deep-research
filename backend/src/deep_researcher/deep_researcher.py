@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
-from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
@@ -61,7 +60,7 @@ class DeepResearcher:
         )
 
         self._state: SummaryState | None = None
-        self._llm=MyLLM()
+        self._llm:MyLLM | None=None
 
     @property
     def last_run_id(self) -> str | None:
@@ -71,6 +70,12 @@ class DeepResearcher:
             if self._state is not None
             else None
         )
+    def _get_llm(self) -> MyLLM:
+        """首次需要模型时，使用当前生效配置创建客户端。"""
+        if self._llm is None:
+            self._llm = MyLLM(config=self._config)
+
+        return self._llm
 
     def run(
         self,
@@ -94,23 +99,7 @@ class DeepResearcher:
             research_topic=topic.strip(),
         )
         self._state = state
-        config = self._base_config.model_dump(
-            mode="json",
-            include={
-                "enable_notes",
-                "notes_workspace",
-                "search_api",
-                "fetch_full_page",
-                "strip_thinking_tokens",
-            },
-        )
-
-        # 恢复时即使工作目录改变，也使用原来的笔记目录。
-        config["notes_workspace"] = str(
-            Path(self._base_config.notes_workspace)
-            .expanduser()
-            .resolve()
-        )
+        config = self._base_config.snapshot()
 
         #构造record
         record = ResearchRecord(
@@ -192,10 +181,15 @@ class DeepResearcher:
             return self._to_output(state)
 
         try:
-            self._config = Configuration.model_validate({
-                **self._base_config.model_dump(),
-                **record.config,
-            })
+            self._config = self._base_config.for_resume(
+                record.config
+            )
+
+            # 同一个工作流对象可能连续运行多次研究。
+            # 配置切换后，下一次需要模型时重新创建客户端。
+            if self._llm is not None:
+                self._llm.close()
+                self._llm = None
 
             record.last_error = None
 
@@ -364,7 +358,7 @@ class DeepResearcher:
         """为本轮规划创建独立的 Agent 对话。"""
         agent = ToolAwareAgent(
             name="Agent_for_planner",
-            llm=self._llm,
+            llm=self._get_llm(),
             sys_prompt=todo_planner_system_prompt,
             config=self._config,
         )
@@ -553,7 +547,7 @@ class DeepResearcher:
     def _create_summarizer_agent(self) -> SimpleAgent:
         return SimpleAgent(
             name="Agent_for_summarizer",
-            llm=self._llm,
+            llm=self._get_llm(),
             sys_prompt=summarizer_system_prompt,
             config=self._config,
             enable_tool_call=False,
@@ -562,7 +556,7 @@ class DeepResearcher:
     def _create_reporter_agent(self) -> SimpleAgent:
         return SimpleAgent(
             name="Agent_for_reporter",
-            llm=self._llm,
+            llm=self._get_llm(),
             sys_prompt=reporter_system_prompt,
             config=self._config,
             enable_tool_call=False,
@@ -572,7 +566,7 @@ class DeepResearcher:
         """释放自有资源；外部注入的仓储由调用方关闭。"""
         try:
             if self._llm is not None:
-                self._llm.client.close()
+                self._llm.close()
                 self._llm = None
         finally:
             if self._owns_repository:

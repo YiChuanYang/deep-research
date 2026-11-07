@@ -1,161 +1,206 @@
+"""统一加载、校验和保存应用配置。"""
+
+from __future__ import annotations
+
 import os
+from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Optional
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field
+from dotenv import dotenv_values
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
-class SearchAPI(Enum):
-    PERPLEXITY = "perplexity"
+# 固定读取 backend/.env，避免工作目录改变后找错文件。
+DEFAULT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+# 只有这些非敏感字段可以进入研究快照。
+SNAPSHOT_FIELDS = {
+    "llm_provider",
+    "llm_model_id",
+    "llm_base_url",
+    "llm_timeout",
+    "llm_max_retries",
+    "llm_temperature",
+    "llm_max_tokens",
+    "search_api",
+    "search_timeout",
+    "search_max_results",
+    "fetch_full_page",
+    "max_tokens_per_source",
+    "enable_notes",
+    "notes_workspace",
+    "strip_thinking_tokens",
+}
+
+
+class SearchAPI(str, Enum):
+    """当前实际支持的搜索后端。"""
+
     TAVILY = "tavily"
     DUCKDUCKGO = "duckduckgo"
-    SEARXNG = "searxng"
-    ADVANCED = "advanced"
 
 
 class Configuration(BaseModel):
-    """Configuration options for the deep research assistant."""
+    """一次运行使用的配置。"""
 
-    max_web_research_loops: int = Field(
-        default=3,
-        title="Research Depth",
-        description="Number of research iterations to perform",
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        str_strip_whitespace=True,
+        hide_input_in_errors=True,
+        allow_inf_nan=False,
     )
-    local_llm: str = Field(
-        default="llama3.2",
-        title="Local Model Name",
-        description="Name of the locally hosted LLM (Ollama/LMStudio)",
-    )
-    tavily_api_key :Optional[str]= Field(
-        default=None,
-        title="Search API Key",
-        description="",
-    )
-    llm_provider: str = Field(
-        default="ollama",
-        title="LLM Provider",
-        description="Provider identifier (ollama, lmstudio, or custom)",
-    )
-    search_api: SearchAPI = Field(
-        default=SearchAPI.TAVILY,
-        title="Search API",
-        description="Web search API to use",
-    )
-    enable_notes: bool = Field(
-        default=True,
-        title="Enable Notes",
-        description="Whether to store task progress in NoteTool",
-    )
-    notes_workspace: str = Field(
-        default="./notes",
-        title="Notes Workspace",
-        description="Directory for NoteTool to persist task notes",
-    )
-    fetch_full_page: bool = Field(
-        default=False,
-        title="Fetch Full Page",
-        description="Include the full page content in the search results",
-    )
-    ollama_base_url: str = Field(
-        default="http://localhost:11434",
-        title="Ollama Base URL",
-        description="Base URL for Ollama API (without /v1 suffix)",
-    )
-    lmstudio_base_url: str = Field(
-        default="http://localhost:1234/v1",
-        title="LMStudio Base URL",
-        description="Base URL for LMStudio OpenAI-compatible API",
-    )
-    strip_thinking_tokens: bool = Field(
-        default=True,
-        title="Strip Thinking Tokens",
-        description="Whether to strip <think> tokens from model responses",
-    )
-    use_tool_calling: bool = Field(
-        default=False,
-        title="Use Tool Calling",
-        description="Use tool calling instead of JSON mode for structured output",
-    )
-    llm_api_key: Optional[str] = Field(
-        default=None,
-        title="LLM API Key",
-        description="Optional API key when using custom OpenAI-compatible services",
-    )
-    llm_base_url: Optional[str] = Field(
-        default=None,
-        title="LLM Base URL",
-        description="Optional base URL when using custom OpenAI-compatible services",
-    )
-    llm_model_id: Optional[str] = Field(
-        default=None,
-        title="LLM Model ID",
-        description="Optional model identifier for custom OpenAI-compatible services",
-    )
+
+    # 模型配置。
+    llm_provider: str = Field(default="zhipu", min_length=1)
+    llm_model_id: str | None = None
+    llm_base_url: str | None = None
+    llm_api_key: SecretStr | None = Field(default=None, repr=False)
+
+    llm_timeout: float = Field(default=120, gt=0)
+    llm_max_retries: int = Field(default=2, ge=0, le=5)
+    llm_temperature: float | None = Field(default=0.0, ge=0, le=2)
+    llm_max_tokens: int = Field(default=4080, gt=0)
+
+    # 搜索配置。
+    search_api: SearchAPI = SearchAPI.TAVILY
+    search_timeout: int = Field(default=30, gt=0, le=120)
+    search_max_results: int = Field(default=5, ge=1, le=20)
+    tavily_api_key: SecretStr | None = Field(default=None, repr=False)
+
+    fetch_full_page: bool = False
+    max_tokens_per_source: int = Field(default=2000, gt=0)
+
+    # 笔记与摘要配置。
+    enable_notes: bool = True
+    notes_workspace: str = Field(default="./notes", min_length=1)
+    strip_thinking_tokens: bool = True
 
     @classmethod
-    def from_env(cls, overrides: Optional[dict[str, Any]] = None) -> "Configuration":
-        """Create a configuration object using environment variables and overrides."""
+    def from_env(
+        cls,
+        overrides: Mapping[str, Any] | None = None,
+        *,
+        env_file: str | Path | None = DEFAULT_ENV_FILE,
+    ) -> Configuration:
+        """按默认值、文件、系统环境、显式覆盖的顺序构造配置。"""
+        file_values = (
+            dotenv_values(env_file, interpolate=False)
+            if env_file is not None
+            else {}
+        )
 
-        raw_values: dict[str, Any] = {}
+        values: dict[str, Any] = {}
 
-        # cls.model_fields 是pydantic自动生成的字段信息，包含字段名和类型等信息 
-        for field_name in cls.model_fields.keys():
-            env_key = field_name.upper()
-            if env_key in os.environ:
-                raw_values[field_name] = os.environ[env_key]
+        for field_name in cls.model_fields:
+            env_name = field_name.upper()
 
-        # Additional mappings for explicit env names
-        env_aliases = {
-            "local_llm": os.getenv("LOCAL_LLM"),
-            "llm_provider": os.getenv("LLM_PROVIDER"),
-            "llm_api_key": os.getenv("LLM_API_KEY"),
-            "llm_model_id": os.getenv("LLM_MODEL_ID"),
-            "llm_base_url": os.getenv("LLM_BASE_URL"),
-            "lmstudio_base_url": os.getenv("LMSTUDIO_BASE_URL"),
-            "ollama_base_url": os.getenv("OLLAMA_BASE_URL"),
-            "max_web_research_loops": os.getenv("MAX_WEB_RESEARCH_LOOPS"),
-            "fetch_full_page": os.getenv("FETCH_FULL_PAGE"),
-            "strip_thinking_tokens": os.getenv("STRIP_THINKING_TOKENS"),
-            "use_tool_calling": os.getenv("USE_TOOL_CALLING"),
-            "search_api": os.getenv("SEARCH_API"),
-            "tavily_api_key":os.getenv("TAVILY_API_KEY"),
-            "enable_notes": os.getenv("ENABLE_NOTES"),
-            "notes_workspace": os.getenv("NOTES_WORKSPACE"),
-        }
+            if env_name in os.environ:
+                values[field_name] = os.environ[env_name]
+            elif file_values.get(env_name) is not None:
+                values[field_name] = file_values[env_name]
 
-        for key, value in env_aliases.items():
-            if value is not None:
-                raw_values.setdefault(key, value)
+        if overrides is not None:
+            values.update(overrides)
 
-        if overrides:
-            for key, value in overrides.items():
-                if value is not None:
-                    raw_values[key] = value
+        return cls.model_validate(values)
 
-        return cls(**raw_values)
+    def require_llm(self) -> None:
+        """在实际创建模型客户端时检查所需配置。"""
+        if not self.llm_model_id:
+            raise ValueError("请配置 LLM_MODEL_ID")
 
-    def sanitized_ollama_url(self) -> str:
-        """Ensure Ollama base URL includes the /v1 suffix required by OpenAI clients."""
+        if not self.llm_base_url:
+            raise ValueError("请配置 LLM_BASE_URL")
 
-        base = self.ollama_base_url.rstrip("/")
-        if not base.endswith("/v1"):
-            base = f"{base}/v1"
-        return base
+        url = urlsplit(self.llm_base_url)
 
-    def resolved_model(self) -> Optional[str]:
-        """Best-effort resolution of the model identifier to use."""
+        if url.scheme not in {"http", "https"} or not url.netloc:
+            raise ValueError(
+                "LLM_BASE_URL 必须是完整的 HTTP/HTTPS 地址"
+            )
 
-        return self.llm_model_id or self.local_llm
+        if url.username or url.password or url.query or url.fragment:
+            raise ValueError(
+                "LLM_BASE_URL 只填写服务地址，凭证放入 LLM_API_KEY"
+            )
 
-# 全局缓存
-_config_instance: Optional[Configuration] = None
+        if (
+            self.llm_api_key is None
+            or not self.llm_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("请配置 LLM_API_KEY")
 
+    def require_search(self) -> None:
+        """在实际创建搜索工具时检查所需配置。"""
+        if self.search_api == SearchAPI.TAVILY:
+            if (
+                self.tavily_api_key is None
+                or not self.tavily_api_key.get_secret_value().strip()
+            ):
+                raise ValueError(
+                    "使用 Tavily 时请配置 TAVILY_API_KEY"
+                )
+
+        if (
+            self.search_api == SearchAPI.DUCKDUCKGO
+            and self.fetch_full_page
+        ):
+            raise ValueError(
+                "当前 DuckDuckGo 实现不支持 FETCH_FULL_PAGE=true"
+            )
+
+    def snapshot(self) -> dict[str, Any]:
+        """生成可以写入数据库的非敏感配置快照。"""
+        data = self.model_dump(
+            mode="json",
+            include=SNAPSHOT_FIELDS,
+        )
+
+        data["notes_workspace"] = str(
+            Path(self.notes_workspace).expanduser().resolve()
+        )
+
+        return data
+
+    def for_resume(
+        self,
+        snapshot: Mapping[str, Any],
+    ) -> Configuration:
+        """恢复原研究参数，凭证继续使用当前配置中的值。"""
+        if set(snapshot) - SNAPSHOT_FIELDS:
+            raise ValueError(
+                "研究快照包含未知配置字段，请先迁移快照"
+            )
+
+        restored = type(self).model_validate({
+            **self.model_dump(),
+            **snapshot,
+        })
+
+        current_endpoint = (
+            self.llm_provider,
+            (self.llm_base_url or "").rstrip("/"),
+        )
+
+        original_endpoint = (
+            restored.llm_provider,
+            (restored.llm_base_url or "").rstrip("/"),
+        )
+
+        if current_endpoint != original_endpoint:
+            raise ValueError(
+                "恢复时请使用原研究的 LLM_PROVIDER 和 LLM_BASE_URL"
+            )
+
+        return restored
+
+
+@lru_cache(maxsize=1)
 def get_config() -> Configuration:
-    """获取全局唯一的配置实例（懒加载单例）"""
-    global _config_instance
-    if _config_instance is None:
-        # 自动加载 .env + 从环境变量生成
-        from dotenv import load_dotenv
-        load_dotenv()
-        _config_instance = Configuration.from_env()
-    return _config_instance
+    """每个进程首次调用时加载配置，后续复用。"""
+    return Configuration.from_env()

@@ -4,19 +4,16 @@ from time import perf_counter
 from typing import Any, Optional, Tuple
 from deep_researcher.tools.search_tool import SearchTool
 
-from deep_researcher.config import Configuration
+from deep_researcher.config import Configuration, get_config
 from deep_researcher.models import SummaryState
 from deep_researcher.utils import (
     deduplicate_and_format_sources,
-    format_sources,
-    get_config_value,
+    format_sources
 )
 
 from deep_researcher.logging_config import log_operation
 
 logger = logging.getLogger(__name__)
-
-MAX_TOKENS_PER_SOURCE = 2000
 
 @log_operation("搜索")
 def dispatch_search(
@@ -29,25 +26,28 @@ def dispatch_search(
     """Execute configured search backend and normalise response payload."""
 
     started_at = perf_counter()
-    search_api = get_config_value(config.search_api)
-    active_search_tool = search_tool or SearchTool(config=config)
+
+    search_api = config.search_api.value
+    active_search_tool = (
+        search_tool
+        if search_tool is not None
+        else SearchTool(config=config)
+    )
+
+    if active_search_tool.backend != search_api:
+        raise ValueError(
+            "注入的搜索工具后端与当前配置不一致"
+        )
 
     logger.info(
         "正在检索 · backend=%s", search_api,
         extra={"event": "search_started", "backend": search_api},
     )
     try:
-        raw_response = active_search_tool.run(
-            {
-                "input": query,
-                "backend": search_api,
-                "mode": "structured",
-                "fetch_full_page": config.fetch_full_page,
-                "max_results": 5,
-                "max_tokens_per_source": MAX_TOKENS_PER_SOURCE,
-                "loop_count": loop_count,
-            }
-        )
+        raw_response = active_search_tool.run({
+            "input": query,
+            "max_results": config.search_max_results,
+        })
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.debug(
             "❌ 搜索失败：backend=%s error_type=%s",
@@ -104,24 +104,33 @@ def dispatch_search(
 
 def prepare_research_context(
     search_result: dict[str, Any] | None,
-    answer_text: Optional[str]=None,
+    answer_text: str | None = None,
+    config: Configuration | None = None,
 ) -> tuple[str, str]:
-    """Build structured context and source summary for downstream agents."""
+    """根据当前配置整理来源和研究上下文。"""
+    active_config = (
+        config if config is not None else get_config()
+    )
 
     sources_summary = format_sources(search_result)
+
     context = deduplicate_and_format_sources(
         search_result or {"results": []},
-        max_tokens_per_source=MAX_TOKENS_PER_SOURCE,
+        max_tokens_per_source=(
+            active_config.max_tokens_per_source
+        ),
+        fetch_full_page=active_config.fetch_full_page,
     )
 
     if answer_text:
         context = f"AI直接答案：\n{answer_text}\n\n{context}"
 
     logger.debug(
-        "🧩 搜索上下文整理完成：sources=%d summary_chars=%d context_chars=%d",
+        "搜索上下文已整理 · "
+        "sources=%d context_chars=%d full_page=%s",
         len((search_result or {}).get("results", [])),
-        len(sources_summary),
         len(context),
+        active_config.fetch_full_page,
     )
 
     return sources_summary, context
@@ -148,6 +157,7 @@ class SearchService:
         sources_summary, context = prepare_research_context(
             payload,
             answer_text,
+            config=self._config
         )
 
         task.sources_summary = sources_summary

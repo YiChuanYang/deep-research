@@ -21,79 +21,104 @@ class SearchTool(Tool):
         self,
         name: str = "search_tool",
         description: str = "调用搜索引擎获取外部信息",
-        backend: Optional[str] = None,
-        timeout: int = 10,
-        config: Optional[Configuration] = None,
+        config: Configuration | None = None,
     ) -> None:
-        super().__init__(name=name, description=description)
+        super().__init__(
+            name=name,
+            description=description,
+        )
 
-        # 1. 基础参数校验
-        if not isinstance(timeout, int) or timeout <= 0:
-            raise ValueError("timeout 必须是正整数")
+        self._config = (
+            config if config is not None else get_config()
+        )
+        self._config.require_search()
 
-        # 2. 配置兜底
-        self._config = config or get_config()
+        self.backend = self._config.search_api.value
+        self.timeout = self._config.search_timeout
 
-        # 3. 确定最终后端：优先传参，其次读配置（枚举取 value 转字符串）
-        self.backend = backend or self._config.search_api.value
-        self.timeout = timeout
+        self._tavily_client: TavilyClient | None = None
 
-        # 4. 后端专属客户端预初始化
-        self._tavily_client: Optional[TavilyClient] = None
         if self.backend == "tavily":
-            api_key = self._config.tavily_api_key
-            if not api_key:
-                raise ValueError("使用 tavily 后端请先配置 TAVILY_API_KEY")
-            self._tavily_client = TavilyClient(api_key=api_key)
+            key = self._config.tavily_api_key
+            assert key is not None
 
-        logger.debug("✅ SearchTool 初始化成功 | backend=%s", self.backend)
+            self._tavily_client = TavilyClient(
+                api_key=key.get_secret_value()
+            )
 
-    def run(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        """统一入口：校验参数、分发后端、标准化返回"""
+        logger.debug(
+            "搜索工具已初始化 · "
+            "backend=%s timeout=%ss max_results=%d",
+            self.backend,
+            self.timeout,
+            self._config.search_max_results,
+            extra={
+                "event": "search_initialized",
+                "backend": self.backend,
+            },
+        )
 
+    def run(
+        self,
+        parameters: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行搜索；后端和连接设置由配置决定。"""
         if not isinstance(parameters, dict):
             raise ValueError("parameters 必须是字典")
 
-        # 1. 核心参数校验
+        unknown = set(parameters) - {"input", "max_results"}
+        if unknown:
+            raise ValueError(
+                f"不支持的搜索参数：{sorted(unknown)}"
+            )
+
         query = parameters.get("input")
+
         if not isinstance(query, str) or not query.strip():
             raise ValueError("input 必须是非空字符串")
+
         query = query.strip()
 
-        max_results = parameters.get("max_results", 5)
-        if type(max_results) is not int or max_results <= 0:
-            raise ValueError("max_results 必须是正整数")
+        max_results = parameters.get(
+            "max_results",
+            self._config.search_max_results,
+        )
 
-        fetch_full_page = parameters.get("fetch_full_page", self._config.fetch_full_page)
-        if not isinstance(fetch_full_page, bool):
-            raise ValueError("fetch_full_page 必须是布尔值")
+        if type(max_results) is not int or not 1 <= max_results <= 20:
+            raise ValueError("max_results 必须是 1～20 的整数")
 
-        # 2. 按后端分发搜索（只拿原生结果，不做格式化）
         logger.debug(
-            "🔍 搜索开始 | backend=%s query_len=%d max_results=%d",
+            "搜索开始 · backend=%s query_chars=%d max_results=%d",
             self.backend,
             len(query),
             max_results,
         )
 
         if self.backend == "duckduckgo":
-            entries = self._search_duckduckgo(query, max_results)
+            entries = self._search_duckduckgo(
+                query,
+                max_results,
+            )
         elif self.backend == "tavily":
-            entries = self._search_tavily(query, max_results, fetch_full_page)
+            entries = self._search_tavily(
+                query,
+                max_results,
+                self._config.fetch_full_page,
+            )
         else:
-            raise ValueError(f"不支持的搜索后端：{self.backend}")
+            raise ValueError(
+                f"不支持的搜索后端：{self.backend}"
+            )
 
-        # 3. 统一标准化（两个后端共用同一套解析逻辑）
         results, notices = self._normalize_results(entries)
 
         logger.debug(
-            "✅ 搜索完成 | backend=%s results=%d notices=%d",
+            "搜索完成 · backend=%s results=%d notices=%d",
             self.backend,
             len(results),
             len(notices),
         )
 
-        # 4. 统一返回结构，所有后端完全一致
         return {
             "results": results,
             "backend": self.backend,
@@ -129,25 +154,29 @@ class SearchTool(Tool):
         query: str,
         max_results: int = 5,
         fetch_full_page: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Tavily 原生搜索，返回原始结果列表"""
+    ) -> list[dict[str, Any]]:
+        """请求 Tavily，并使用统一的搜索超时。"""
+        if self._tavily_client is None:
+            raise RuntimeError("Tavily 客户端尚未初始化")
+
         try:
-            logger.debug("🌐 Tavily 请求 | query=%s", query)
             response = self._tavily_client.search(
                 query=query,
-                search_depth="advanced" if fetch_full_page else "basic",
+                search_depth=(
+                    "advanced" if fetch_full_page else "basic"
+                ),
                 max_results=max_results,
                 include_answer=False,
                 include_raw_content=fetch_full_page,
+                timeout=self.timeout,
             )
 
-            results = response.get("results", [])
-            logger.debug("🌐 Tavily 返回 | 条数=%d", len(results))
-            return results
+            return response.get("results", [])
 
-        except Exception as e:
-            logger.debug("❌ Tavily 搜索失败 | error=%s", str(e))
-            raise RuntimeError(f"Tavily 搜索失败：{e}") from e
+        except Exception as exc:
+            raise RuntimeError(
+                f"Tavily 搜索失败：{exc}"
+            ) from exc
 
     # ===================== 统一标准化逻辑 =====================
     @staticmethod
@@ -179,13 +208,14 @@ class SearchTool(Tool):
                 "url": url,
                 "title": title,
                 "content": content,
+                "raw_content": entry.get("raw_content") or "",
             })
 
         return results, notices
 
     # ===================== 工具参数定义（给 tool call 用） =====================
-    def get_parameters(self) -> List[ToolParameter]:
-        """返回工具的 OpenAI 参数 schema"""
+    def get_parameters(self) -> list[ToolParameter]:
+        """描述模型可以传入的搜索参数。"""
         return [
             ToolParameter(
                 name="input",
@@ -196,8 +226,11 @@ class SearchTool(Tool):
             ToolParameter(
                 name="max_results",
                 type="integer",
-                description="返回结果的最大条数，默认5条",
+                description=(
+                    "返回结果的最大条数，范围 1～20；"
+                    "未指定时使用应用配置"
+                ),
                 required=False,
-                default=5,
+                default=self._config.search_max_results,
             ),
         ]

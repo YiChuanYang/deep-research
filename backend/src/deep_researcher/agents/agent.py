@@ -13,7 +13,9 @@ class Agent(ABC):
             config:Optional[Configuration]=None)->None:
         self.name = name
         self.llm = llm
-        self.config = config or Configuration()
+        self.config = (
+    config if config is not None else llm.config
+)
         self.sys_prompt = sys_prompt or "你是一个有用的AI助手"
 
         self._history:List[Message]=[]
