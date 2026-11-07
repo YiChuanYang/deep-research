@@ -573,17 +573,6 @@ class DeepResearcher:
                 self._repository.close()
 
 
-
-
-
-        
-
-
-
-
-
-
-
     @staticmethod
     def _to_output(
         state: SummaryState,
@@ -594,4 +583,9 @@ class DeepResearcher:
             running_summary=state.running_summary,
             report_markdown=state.structured_report,
             todo_items=deepcopy(state.todo_items),
+            sources=deepcopy(state.sources),
+            evidence=deepcopy(state.evidence),
+            report_citation_ids=list(
+                state.report_citation_ids
+            ),
         )

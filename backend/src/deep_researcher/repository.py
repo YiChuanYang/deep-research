@@ -1,7 +1,13 @@
 from pathlib import Path
 from typing import  Literal,Optional
 import logging
-from deep_researcher.models import ResearchRecord,SummaryState,TodoItem
+from deep_researcher.models import (
+    ResearchRecord,
+    SummaryState,
+    TodoItem,
+    Evidence,
+    Source
+)
 import sqlite3
 from datetime import datetime,timezone
 from dataclasses import asdict
@@ -74,7 +80,7 @@ class ResearchRepository:
         """将ResearchRecord转换成文本,方便进入数据库中的record字段
         """
         return json.dumps({
-            "schema_version":1,
+            "schema_version":2,
             "state":asdict(record.state),
             "config":record.config,
             "max_tasks":record.max_tasks,
@@ -83,48 +89,113 @@ class ResearchRepository:
         },
         ensure_ascii=False,)
     @staticmethod
-    def _decode(row:sqlite3.Row)->ResearchRecord:
-        """将数据库搜索结果返回到record类"""
+    def _decode(row: sqlite3.Row) -> ResearchRecord:
+        """恢复结构化证据，并检查引用关联。"""
         data = json.loads(row["record"])
-        if int(data.get("schema_version"))!=1:
+        version = data.get("schema_version")
+
+        if version not in (1, 2):
+            raise ValueError("不支持的研究快照版本")
+
+        if version == 1 and row["status"] != "completed":
             raise ValueError(
-                "不支持该研究快照版本，需要先执行数据迁移"
+                "旧版未完成研究缺少证据映射，"
+                "请新建研究或先用旧版完成"
             )
 
         if data["stage"] not in (
-            "plan", "tasks", "report", "save_report", "done"
+            "plan",
+            "tasks",
+            "report",
+            "save_report",
+            "done",
         ):
             raise ValueError("研究阶段无效")
-        #从字典中获取state,此时state还是字典类型
-        raw_state = data.get("state")
-        raw_state["todo_items"] = [
-            TodoItem(**item) for item in raw_state["todo_items"]
+
+        raw = data["state"]
+
+        raw["todo_items"] = [
+            TodoItem(**item)
+            for item in raw["todo_items"]
         ]
-        #json对象会变成字符串，需要恢复state中search_contexts的类型为int的键
-        raw_state["search_contexts"]={
-            int(key):value 
-            for key,value in raw_state["search_contexts"].items()
+
+        raw["search_contexts"] = {
+            int(key): value
+            for key, value in raw["search_contexts"].items()
         }
 
-        for task in raw_state["todo_items"]:
+        raw["sources"] = {
+            key: Source(**value)
+            for key, value in raw.get("sources", {}).items()
+        }
+
+        raw["evidence"] = {
+            key: Evidence(**value)
+            for key, value in raw.get("evidence", {}).items()
+        }
+
+        state = SummaryState(**raw)
+
+        if state.run_id != row["run_id"]:
+            raise ValueError(
+                "快照编号与数据库记录不一致"
+            )
+
+        task_ids = {
+            task.id for task in state.todo_items
+        }
+
+        for key, source in state.sources.items():
+            if key != source.source_id:
+                raise ValueError("来源编号不一致")
+
+        for key, item in state.evidence.items():
+            if (
+                key != item.evidence_id
+                or item.source_id not in state.sources
+                or item.task_id not in task_ids
+            ):
+                raise ValueError("证据关联损坏")
+
+        for task in state.todo_items:
             if task.checkpoint not in (
-                "search", "summarize", "save_note", "done"
+                "search",
+                "summarize",
+                "save_note",
+                "done",
+            ):
+                raise ValueError("任务检查点无效")
+
+            for key in task.evidence_ids:
+                if (
+                    key not in state.evidence
+                    or state.evidence[key].task_id != task.id
+                ):
+                    raise ValueError(
+                        "任务证据关联损坏"
+                    )
+
+            if not set(task.citation_ids).issubset(
+                task.evidence_ids
             ):
                 raise ValueError(
-                    f"任务 {task.id} 的检查点无效"
+                    "摘要引用超出任务证据范围"
                 )
 
-        state = SummaryState(**raw_state)
-        if state.run_id != row["run_id"]:
-            raise ValueError("快照编号与数据库记录不一致")
+        if not set(state.report_citation_ids).issubset(
+            state.evidence
+        ):
+            raise ValueError(
+                "报告引用了不存在的证据"
+            )
+
         return ResearchRecord(
             state=state,
             config=data["config"],
             max_tasks=data["max_tasks"],
             stage=data["stage"],
             status=row["status"],
-            last_error=str(data["last_error"]),
-
+            last_error=data["last_error"],
         )
 
     def create(self,record:ResearchRecord)->None:

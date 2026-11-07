@@ -1,4 +1,4 @@
-"""整合已完成子任务并生成最终研究报告."""
+"""整合带引用的摘要，校验后由程序补充参考条目。"""
 
 from __future__ import annotations
 
@@ -10,66 +10,131 @@ from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.logging_config import log_operation
 from deep_researcher.models import SummaryState
 from deep_researcher.prompts import report_writer_instructions
+from deep_researcher.services.evidence_service import EvidenceService
+
 
 logger = logging.getLogger(__name__)
 
 
 class ReportingService:
-    """读取共享研究状态，生成并保存最终报告文本."""
+    """只允许引用已完成摘要实际使用的证据。"""
 
-    def __init__(self, agent_factory: Callable[[], SimpleAgent]) -> None:
+    def __init__(
+        self,
+        agent_factory: Callable[[], SimpleAgent],
+    ) -> None:
         self._agent_factory = agent_factory
 
-    @log_operation("报告生成", state_parameter="state")
-    def generate_report(self, state: SummaryState) -> str:
+    @log_operation(
+        "报告生成",
+        state_parameter="state",
+    )
+    def generate_report(
+        self,
+        state: SummaryState,
+    ) -> str:
         started_at = perf_counter()
-        completed_tasks = [
+
+        tasks = [
             task
             for task in state.todo_items
             if task.status == "completed" and task.summary
         ]
-        if not completed_tasks:
-            raise ValueError("没有可汇总的已完成任务，无法生成报告")
+
+        if not tasks:
+            raise ValueError("没有可汇总的已完成任务")
+
+        evidence_service = EvidenceService()
+        allowed: list[str] = []
+
+        # 再次校验摘要，确保进入报告的材料关系完整。
+        for task in tasks:
+            ids = evidence_service.validate(
+                state,
+                task.summary or "",
+                task.evidence_ids,
+            )
+            allowed.extend(ids)
+
+        allowed = list(dict.fromkeys(allowed))
 
         task_summaries = "\n\n".join(
-            f"## 任务 {task.id}: {task.title}\n"
-            f"目标：{task.intent}\n\n"
-            f"{task.summary}\n\n"
-            f"来源：\n{task.sources_summary or '暂无来源'}"
-            for task in completed_tasks
+            f"## 任务 {task.id}：{task.title}\n"
+            f"{task.summary}"
+            for task in tasks
         )
+
         prompt = report_writer_instructions.format(
-            research_topic=state.research_topic or "未命名研究主题",
+            research_topic=(
+                state.research_topic or "未命名主题"
+            ),
             task_summaries=task_summaries,
+            evidence_context=evidence_service.context(
+                state,
+                allowed,
+            ),
         )
 
         logger.info(
-            "正在汇总报告 · %d 个任务",
-            len(completed_tasks),
-            extra={"event": "report_started", "task_count": len(completed_tasks)},
+            "正在汇总报告 · 任务=%d 可引用证据=%d",
+            len(tasks),
+            len(allowed),
+            extra={
+                "event": "report_started",
+                "task_count": len(tasks),
+            },
         )
+
         agent = self._agent_factory()
+        agent.enable_tool_call = False
+
         try:
-            report = agent.run(input_text=prompt).strip()
-        except Exception:
-            logger.debug("❌ 研究报告生成失败：tasks=%d", len(completed_tasks))
-            raise
+            response = agent.run(input_text=prompt)
         finally:
             agent.clear_history()
 
-        if not report:
-            raise ValueError("报告 Agent 返回了空内容")
+        if (
+            not isinstance(response, str)
+            or not response.strip()
+        ):
+            raise ValueError("报告正文为空")
 
+        body = response.strip()
+
+        citation_ids = evidence_service.validate(
+            state,
+            body,
+            allowed,
+        )
+
+        references = evidence_service.references(
+            state,
+            citation_ids,
+        )
+
+        report = (
+            f"{body}\n\n"
+            f"## 引用证据\n\n"
+            f"{references}"
+        )
+
+        # 所有校验完成之后，再更新共享状态。
         state.structured_report = report
         state.running_summary = report
+        state.report_citation_ids = citation_ids
+
         duration = perf_counter() - started_at
+
         logger.info(
-            "报告已生成 · %d 字 · 耗时=%.2fs", len(report), duration,
+            "报告已生成 · 引用=%d 耗时=%.2fs",
+            len(citation_ids),
+            duration,
             extra={
                 "event": "report_completed",
+                "citation_ids": citation_ids,
                 "report_chars": len(report),
-                "task_count": len(completed_tasks),
                 "duration_s": round(duration, 3),
             },
         )
+
         return report

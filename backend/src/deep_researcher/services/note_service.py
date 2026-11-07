@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-
+from deep_researcher.services.evidence_service import EvidenceService
 from deep_researcher.config import Configuration
 from deep_researcher.logging_config import log_operation
 from deep_researcher.models import SummaryState
@@ -94,15 +94,18 @@ class NoteService:
             raise ValueError(
                 f"任务 {task_id} 没有有效摘要"
             )
-
+        references = EvidenceService().references(
+            state,
+            task.citation_ids,
+        )
         content = (
             f"# 任务 {task.id}: {task.title}\n\n"
             f"研究主题：{state.research_topic or ''}\n\n"
             f"任务目标：{task.intent}\n\n"
             f"检索查询：{task.query}\n\n"
             f"## 摘要\n{task.summary}\n\n"
-            f"## 参考来源\n"
-            f"{task.sources_summary or '暂无来源'}"
+            f"## 引用证据\n"
+            f"{references}"
         )
 
         saved = self._tool.save(

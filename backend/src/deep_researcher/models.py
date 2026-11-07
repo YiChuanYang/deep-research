@@ -34,6 +34,35 @@ class TodoItem:
     note_id: Optional[str] = None
     note_path: Optional[str] = None
     stream_token: Optional[str] = None
+    #证据
+    # 本轮搜索提供给这个任务的证据。
+    evidence_ids: list[str] = field(default_factory=list)
+    # 最终任务摘要实际使用的证据。
+    citation_ids: list[str] = field(default_factory=list)
+
+#证据引用类
+@dataclass(kw_only=True, frozen=True)
+class Source:
+    """一个来源页面；编号在同一研究内唯一。"""
+
+    source_id: str
+    url: str
+    title: str
+
+
+@dataclass(kw_only=True, frozen=True)
+class Evidence:
+    """实际提供给模型的材料片段，不等同于已验证事实。"""
+
+    evidence_id: str
+    source_id: str
+    task_id: int
+    text: str
+    retrieved_at: str
+    query: str
+    backend: str
+    kind: Literal["search_snippet", "page_excerpt"]
+    truncated: bool = False
 
 @dataclass(kw_only=True)
 class SummaryState:
@@ -50,6 +79,10 @@ class SummaryState:
     structured_report: Optional[str] = field(default=None)
     report_note_id: Optional[str] = field(default=None)
     report_note_path: Optional[str] = field(default=None)
+    #证据
+    sources: dict[str, Source] = field(default_factory=dict)
+    evidence: dict[str, Evidence] = field(default_factory=dict)
+    report_citation_ids: list[str] = field(default_factory=list)
 
     def get_task(self, task_id: int) -> TodoItem:
         for task in self.todo_items:
@@ -97,3 +130,7 @@ class SummaryStateOutput:
     running_summary: Optional[str] = field(default=None)  # Backward-compatible文本
     report_markdown: Optional[str] = field(default=None)
     todo_items: List[TodoItem] = field(default_factory=list)
+    sources: dict[str, Source] = field(default_factory=dict)
+    evidence: dict[str, Evidence] = field(default_factory=dict)
+    report_citation_ids: list[str] = field(default_factory=list)
+

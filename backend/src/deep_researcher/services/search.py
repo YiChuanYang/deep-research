@@ -3,7 +3,7 @@ import logging
 from time import perf_counter
 from typing import Any, Optional, Tuple
 from deep_researcher.tools.search_tool import SearchTool
-
+from deep_researcher.services.evidence_service import EvidenceService
 from deep_researcher.config import Configuration, get_config
 from deep_researcher.models import SummaryState
 from deep_researcher.utils import (
@@ -143,8 +143,18 @@ class SearchService:
         self._config = config
         self._search_tool = SearchTool(config=config)
 
-    @log_operation("任务搜索", task_parameter="task_id", state_parameter="state", checkpoint="search")
-    def search_task(self, state: SummaryState, task_id: int) -> None:
+    @log_operation(
+        "任务搜索",
+        task_parameter="task_id",
+        state_parameter="state",
+        checkpoint="search",
+    )
+    def search_task(
+        self,
+        state: SummaryState,
+        task_id: int,
+    ) -> None:
+        """搜索材料，登记证据，再生成带编号的上下文。"""
         task = state.get_task(task_id)
         loop_count = state.research_loop_count + 1
 
@@ -154,15 +164,37 @@ class SearchService:
             loop_count,
             search_tool=self._search_tool,
         )
-        sources_summary, context = prepare_research_context(
-            payload,
-            answer_text,
-            config=self._config
+
+        task.notices = list(notices)
+
+        if answer_text:
+            task.notices.append(
+                "搜索后端的生成式答案未登记为证据"
+            )
+
+        evidence_service = EvidenceService()
+
+        evidence_ids = evidence_service.ingest(
+            state,
+            task_id,
+            (payload or {}).get("results", []),
+            backend=backend,
+            max_chars=self._config.evidence_max_chars,
+            prefer_full_page=self._config.fetch_full_page,
+        )
+
+        context = evidence_service.context(
+            state, evidence_ids
+        )
+
+        sources_summary = evidence_service.references(
+            state, evidence_ids
         )
 
         task.sources_summary = sources_summary
-        task.notices = notices
         state.search_contexts[task_id] = context
+
+        # 暂时保留现有兼容字段。
         state.sources_gathered.append(sources_summary)
         state.web_research_results.append(context)
         state.research_loop_count = loop_count

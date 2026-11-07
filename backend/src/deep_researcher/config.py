@@ -34,6 +34,7 @@ SNAPSHOT_FIELDS = {
     "enable_notes",
     "notes_workspace",
     "strip_thinking_tokens",
+    "evidence_max_chars",
 }
 
 
@@ -79,6 +80,12 @@ class Configuration(BaseModel):
     enable_notes: bool = True
     notes_workspace: str = Field(default="./notes", min_length=1)
     strip_thinking_tokens: bool = True
+    #证据
+    evidence_max_chars: int = Field(
+        default=2000,
+        gt=0,
+        le=20000,
+    )
 
     @classmethod
     def from_env(
