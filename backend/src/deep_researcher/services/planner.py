@@ -106,7 +106,14 @@ class PlanningService:
 
         self._agent.tool_call_listener = capture_and_forward
         try:
-            logger.info("正在规划研究任务", extra={"event": "plan_started"})
+            logger.info(
+                "正在规划研究任务 · 主题=%s",
+                state.research_topic,
+                extra={
+                    "event": "plan_started",
+                    "research_topic": state.research_topic,
+                },
+            )
             self._agent.run(
                 input_text=prompt,
                 tool_choice="required"
@@ -141,11 +148,18 @@ class PlanningService:
                 len(state.research_topic or ""),
             )
             todo_items.append(self.create_fallback_task(state))
+        task_titles = [
+            f"{task.id}. {task.title}"
+            for task in todo_items
+        ]
         logger.info(
-            "规划完成 · %d 个任务", len(todo_items),
+            "规划完成 · %d 个任务 · %s",
+            len(todo_items),
+            "；".join(task_titles),
             extra={
                 "event": "plan_completed",
                 "task_count": len(todo_items),
+                "task_titles": [task.title for task in todo_items],
                 "used_fallback": used_fallback,
                 "duration_s": round(perf_counter() - started_at, 3),
             },

@@ -63,8 +63,14 @@ class SummarizationService:
         )
 
         logger.info(
-            "正在生成摘要",
-            extra={"event": "summary_started"},
+            "正在生成摘要 · 任务=%s · 证据=%s",
+            task.title,
+            "、".join(task.evidence_ids) or "无",
+            extra={
+                "event": "summary_started",
+                "task_title": task.title,
+                "evidence_ids": task.evidence_ids,
+            },
         )
 
         agent = self._agent_factory()
@@ -102,11 +108,15 @@ class SummarizationService:
             )
 
         logger.info(
-            "摘要已生成 · %d 字 · 引用=%d · 耗时=%.2fs",
+            "摘要已生成 · %d 字 · 引用=%s · 耗时=%.2fs",
             len(result.text),
-            len(result.citation_ids),
+            "、".join(result.citation_ids) or "无",
             perf_counter() - started_at,
-            extra={"event": "summary_completed"},
+            extra={
+                "event": "summary_completed",
+                "citation_ids": result.citation_ids,
+                "summary_chars": len(result.text),
+            },
         )
 
         return result

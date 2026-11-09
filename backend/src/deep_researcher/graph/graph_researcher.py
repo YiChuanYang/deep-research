@@ -309,11 +309,16 @@ class GraphDeepResearcher:
                         }
 
                     logger.info(
-                        "执行研究图 · 恢复=%s 待执行=%s",
+                        "执行研究图 · 主题=%s · 恢复=%s · 待执行=%s",
+                        info.topic,
                         exists,
                         snapshot.next,
                         extra={
                             "event": "graph_execution_started",
+                            "research_topic": info.topic,
+                            "max_tasks": info.max_tasks,
+                            "resuming": exists,
+                            "next_nodes": snapshot.next,
                         },
                     )
 
@@ -407,4 +412,3 @@ class GraphDeepResearcher:
                 nodes.close()
 
 
-    

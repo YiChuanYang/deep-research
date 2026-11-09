@@ -84,12 +84,17 @@ class ReportingService:
         )
 
         logger.info(
-            "正在汇总报告 · 任务=%d 可引用证据=%d",
-            len(tasks),
+            "正在汇总报告 · 任务=%s · 可引用证据=%d",
+            "；".join(
+                f"{task.id}. {task.title}"
+                for task in tasks
+            ),
             len(allowed),
             extra={
                 "event": "report_started",
                 "task_count": len(tasks),
+                "task_titles": [task.title for task in tasks],
+                "allowed_evidence_ids": allowed,
             },
         )
 
@@ -129,8 +134,8 @@ class ReportingService:
         duration = perf_counter() - started_at
 
         logger.info(
-            "报告已生成 · 引用=%d 耗时=%.2fs",
-            len(citation_ids),
+            "报告已生成 · 引用=%s · 耗时=%.2fs",
+            "、".join(citation_ids) or "无",
             duration,
             extra={
                 "event": "report_completed",

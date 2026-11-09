@@ -50,11 +50,13 @@ class SearchService:
         backend = self._search_tool.backend
 
         logger.info(
-            "正在检索 · backend=%s",
+            "正在检索 · backend=%s · query=%s",
             backend,
+            task.query,
             extra={
                 "event": "search_started",
                 "backend": backend,
+                "query": task.query,
             },
         )
 
@@ -86,12 +88,14 @@ class SearchService:
             )
 
         logger.info(
-            "检索完成 · %d 条证据 · 耗时=%.2fs",
+            "检索完成 · %d 条证据 · 编号=%s · 耗时=%.2fs",
             len(batch.evidence_ids),
+            "、".join(batch.evidence_ids) or "无",
             perf_counter() - started_at,
             extra={
                 "event": "search_completed",
                 "backend": backend,
+                "evidence_ids": batch.evidence_ids,
             },
         )
 
