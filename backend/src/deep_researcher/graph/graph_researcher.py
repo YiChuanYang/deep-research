@@ -18,7 +18,7 @@ from deep_researcher.graph.graph_nodes import (
     ResearchNodes,
     build_graph,
 )
-from deep_researcher.graph.graph_repository import GraphRunRepository
+from deep_researcher.graph.graph_repository import GraphRunRepository,RunInfo
 from deep_researcher.graph.graph_state import (
     ResearchGraphState,
     encode_state,
@@ -82,34 +82,7 @@ class GraphDeepResearcher:
         max_tasks: int | None = None,
     ) -> SummaryStateOutput:
         '''run构造run_id并在数据库中构造条目'''
-        if not isinstance(topic, str) or not topic.strip():
-            raise ValueError(
-                "研究主题必须为非空字符串"
-            )
-
-        if max_tasks is not None and (
-            type(max_tasks) is not int
-            or max_tasks <= 0
-        ):
-            raise ValueError(
-                "max_tasks 必须是正整数或 None"
-            )
-
-        run_id = uuid4().hex
-        self._last_run_id = run_id
-
-        # closing 在离开 with 时调用 close()，异常时也会调用。
-        with closing(
-            GraphRunRepository(
-                self._directory / "runs.sqlite3"
-            )
-        ) as repository:
-            repository.create(
-                run_id,
-                topic.strip(),
-                self._base_config.snapshot(),
-                max_tasks,
-            )
+        run_id = self.create_run(topic,max_tasks)
 
         return self._execute(
             run_id,
@@ -143,6 +116,9 @@ class GraphDeepResearcher:
         *,
         recover_interrupted: bool,
     ) -> SummaryStateOutput:
+        '''内部包含新建和续跑的逻辑：
+        如果checkpointer不存在 则构建；存在则读取续跑;
+        两者共同的基础都是再数据库中初始化了条目'''
         metadata_path = (
             self._directory / "runs.sqlite3"
         )
@@ -412,3 +388,84 @@ class GraphDeepResearcher:
                 nodes.close()
 
 
+    #面向fastapi的方法
+    def create_run(
+            self,
+            topic:str,
+            max_tasks:int|None=None,
+    )->str:
+        """面向fastapi,创建研究，返回run_id,但是不执行后续流程"""
+        if not isinstance(topic,str) or not topic.strip():
+            raise ValueError("topic必须是字符串且非空值")
+
+        if max_tasks is not None and (type(max_tasks)!=int or max_tasks<=0):
+            raise ValueError("max_tasksz必须是非负整数")
+
+        run_id = uuid4().hex
+        with closing(
+            GraphRunRepository(self._directory/"runs.sqlite3")
+        ) as repository:
+            repository.create(
+                run_id,topic,self._base_config.snapshot(),max_tasks
+            )
+
+        self._last_run_id = run_id
+        return run_id
+    
+    def get_run_info(self, run_id: str) -> RunInfo:
+        """读取运行元数据，不执行研究图。"""
+        if re.fullmatch(r"[0-9a-f]{32}", run_id) is None:
+            raise ValueError("请使用完整的 32 位研究编号")
+
+        metadata_path = self._directory / "runs.sqlite3"
+        if not metadata_path.is_file():
+            raise FileNotFoundError("运行元数据库不存在")
+
+        with closing(GraphRunRepository(metadata_path)) as repository:
+            return repository.load(run_id)
+
+
+    def get_result(self,run_id:str)->SummaryStateOutput:
+        """检查已完成研究的图检查点，组装对外结果"""
+        info = self.get_run_info(run_id)
+        if info.status != "completed":
+            raise RuntimeError("研究尚未完成")
+
+        checkpoint_path = (
+            self._directory / "checkpoints.sqlite3"
+        )
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError("图检查点文件不存在")
+        config = self._base_config.for_resume(info.config)
+        nodes = self._nodes_factory(config,uuid4().hex)
+
+        try:
+            with SqliteSaver.from_conn_string(
+                str(checkpoint_path)
+            ) as checkpointer:
+                graph = build_graph(nodes, checkpointer)
+
+                run_config: dict[str, Any] = {
+                    "configurable": {
+                        "thread_id": run_id,
+                    },
+                }
+
+                snapshot = graph.get_state(run_config)
+
+                if (
+                    not snapshot.values
+                    or snapshot.next
+                    or not snapshot.values.get("finished")
+                ):
+                    raise RuntimeError(
+                        "运行记录显示已完成，但图检查点尚未完成"
+                    )
+
+                payload = snapshot.values.get("payload")
+                if not isinstance(payload, dict):
+                    raise RuntimeError("图检查点中缺少研究状态")
+
+                return to_output(payload)
+        finally:
+            nodes.close()
