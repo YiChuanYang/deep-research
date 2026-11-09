@@ -33,8 +33,7 @@ def decode_state(payload:dict[str,Any])->SummaryState:
     raw["todo_items"]= [
         TodoItem(**item) for item in raw["todo_items"]
     ]
-    raw["search_contexts"]={
-        int(key):value for key,value in raw["search_contexts"].items()}
+   
 
     
     raw["sources"] = {
@@ -92,7 +91,6 @@ def to_output(
 
     return SummaryStateOutput(
         run_id=state.run_id,
-        running_summary=state.running_summary,
         report_markdown=state.structured_report,
         todo_items=state.todo_items,
         sources=state.sources,

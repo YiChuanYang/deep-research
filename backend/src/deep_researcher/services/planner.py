@@ -141,8 +141,6 @@ class PlanningService:
                 len(state.research_topic or ""),
             )
             todo_items.append(self.create_fallback_task(state))
-
-        state.todo_items = todo_items
         logger.info(
             "规划完成 · %d 个任务", len(todo_items),
             extra={

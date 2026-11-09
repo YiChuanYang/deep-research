@@ -37,7 +37,7 @@ from deep_researcher.models import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_GRAPH_DIR = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "data"
     / "langgraph"
 )

@@ -50,6 +50,9 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "repository": ("🗄️", "storage.repository"),
     "graph_researcher": ("🚀", "research.graph"),
     "graph_nodes": ("🧭", "graph.nodes"),
+    "graph.graph_researcher": ("🚀", "research.graph"),
+    "graph.graph_nodes": ("🧭", "graph.nodes"),
+    "services.evidence_service": ("🧾", "services.evidence"),
 }
 _PREFIXES = (
     "✅",

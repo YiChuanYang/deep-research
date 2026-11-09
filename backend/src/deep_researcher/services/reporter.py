@@ -8,7 +8,7 @@ from time import perf_counter
 
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.logging_config import log_operation
-from deep_researcher.models import SummaryState
+from deep_researcher.models import CitedText, SummaryState
 from deep_researcher.prompts import report_writer_instructions
 from deep_researcher.services.evidence_service import EvidenceService
 
@@ -32,7 +32,7 @@ class ReportingService:
     def generate_report(
         self,
         state: SummaryState,
-    ) -> str:
+    ) -> CitedText:
         started_at = perf_counter()
 
         tasks = [
@@ -42,8 +42,16 @@ class ReportingService:
         ]
 
         if not tasks:
-            raise ValueError("没有可汇总的已完成任务")
+            logger.warning(
+                "没有有效任务摘要，返回资料不足说明"
+            )
 
+            return CitedText(
+                text=(
+                    "# 研究结果\n\n"
+                    "本轮未获得足以形成结论的资料。"
+                )
+            )
         evidence_service = EvidenceService()
         allowed: list[str] = []
 
@@ -118,11 +126,6 @@ class ReportingService:
             f"{references}"
         )
 
-        # 所有校验完成之后，再更新共享状态。
-        state.structured_report = report
-        state.running_summary = report
-        state.report_citation_ids = citation_ids
-
         duration = perf_counter() - started_at
 
         logger.info(
@@ -137,4 +140,7 @@ class ReportingService:
             },
         )
 
-        return report
+        return CitedText(
+            text=report,
+            citation_ids=tuple(citation_ids),
+        )

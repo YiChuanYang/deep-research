@@ -175,6 +175,7 @@ class ResearchNodes:
         state: SummaryState,
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
+        """plan任务节点，更新state中的todo_items字段"""
         agent = ToolAwareAgent(
             name="Agent_for_planner",
             llm=self.llm(),
@@ -183,7 +184,7 @@ class ResearchNodes:
         )
 
         try:
-            PlanningService(agent).plan_todo_list(state)
+            state.todo_items = PlanningService(agent).plan_todo_list(state)
         finally:
             agent.clear_history()
 
@@ -206,7 +207,6 @@ class ResearchNodes:
                 "skipped",
             }:
                 task.status="running"
-                task.last_error = None
 
                 logger.info(
                     "任务开始 · %s",
@@ -241,21 +241,21 @@ class ResearchNodes:
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
 
-        SearchService(self.config).search_task(
+        batch = SearchService(self.config).search_task(
             state,
             task_id,
         )
-
         task = state.get_task(task_id)
-
+        #更新状态字段
+        state.sources = batch.sources
+        state.evidence = batch.evidence
+        task.evidence_ids = list(batch.evidence_ids)
+        task.notices = list(batch.notices)
         if not task.evidence_ids:
             task.status = "skipped"
-            task.checkpoint = "done"
             task.notices.append(
                 "搜索没有可用证据"
             )
-        else:
-            task.checkpoint = "summarize"
 
         return {}
     def summarize(
@@ -264,29 +264,25 @@ class ResearchNodes:
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
-        notes = NoteService(self.config)
 
-        SummarizationService(
+        result = SummarizationService(
             self.summary_agent,
             config=self.config,
-            note_service=notes,
         ).summarize_task(
             state,
             task_id,
-            persist_note=False,
         )
 
         task = state.get_task(task_id)
+        #更新状态字段
+        task.summary = result.text
+        task.citation_ids = list(result.citation_ids)
 
         if not task.citation_ids:
             task.status = "skipped"
-            task.checkpoint = "done"
             task.notices.append(
                 "无有效研究信息，未纳入报告"
             )
-        else:
-            task.checkpoint = "save_note"
-
         return {}
     def save_note(
         self,
@@ -295,14 +291,23 @@ class ResearchNodes:
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
 
-        NoteService(self.config).save_task_note(
+        saved = NoteService(self.config).save_task_note(
             state,
             task_id,
         )
 
         task = state.get_task(task_id)
+        task.note_id = (
+            saved.note_id
+            if saved is not None
+            else None
+        )
+        task.note_path = (
+            saved.note_path
+            if saved is not None
+            else None
+        )
         task.status = "completed"
-        task.checkpoint = "done"
 
         logger.info(
             "任务完成",
@@ -315,9 +320,10 @@ class ResearchNodes:
         state: SummaryState,
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
-        report = ReportingService(
+        result = ReportingService(
             self.reporter_agent
         ).generate_report(state)
+        report = result.text
 
         unfinished = [
             task
@@ -329,7 +335,6 @@ class ResearchNodes:
             labels = {
                 "pending": "本轮未执行",
                 "running": "尚未完成",
-                "failed": "执行失败",
                 "skipped": "无有效资料",
             }
 
@@ -342,7 +347,9 @@ class ResearchNodes:
             )
 
         state.structured_report = report
-        state.running_summary = report
+        state.report_citation_ids = list(
+            result.citation_ids
+        )
 
         return {}
 
@@ -351,8 +358,18 @@ class ResearchNodes:
         state: SummaryState,
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
-        NoteService(self.config).save_report_note(
+        saved = NoteService(self.config).save_report_note(
             state
+        )
+        state.report_note_id = (
+            saved.note_id
+            if saved is not None
+            else None
+        )
+        state.report_note_path = (
+            saved.note_path
+            if saved is not None
+            else None
         )
 
         return {"finished": True}

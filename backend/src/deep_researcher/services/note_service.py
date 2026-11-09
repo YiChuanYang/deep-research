@@ -7,7 +7,7 @@ from deep_researcher.services.evidence_service import EvidenceService
 from deep_researcher.config import Configuration
 from deep_researcher.logging_config import log_operation
 from deep_researcher.models import SummaryState
-from deep_researcher.tools.note_tool import NoteTool
+from deep_researcher.tools.note_tool import Note, NoteTool
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +57,8 @@ class NoteService:
                     extra={"event": "note_link_missing", "note_id": task.note_id},
                 )
 
-            task.note_id = None
-            task.note_path = None
             return ""
 
-        # 即使上次没来得及回填编号，也能通过固定身份重新关联。
-        task.note_id = note.note_id
-        task.note_path = note.note_path
 
         logger.debug(
             "已有笔记已读取 · %d 字",
@@ -83,7 +78,7 @@ class NoteService:
         self,
         state: SummaryState,
         task_id: int,
-    ) -> None:
+    ) -> Note|None:
         if self._tool is None:
             logger.debug("笔记功能已关闭 · 跳过保存", extra={"event": "note_save_disabled"})
             return
@@ -115,9 +110,6 @@ class NoteService:
             content=content,
         )
 
-        task.note_id = saved.note_id
-        task.note_path = saved.note_path
-
         logger.info(
             "任务笔记已保存 · %d 字",
             len(saved.content),
@@ -128,15 +120,16 @@ class NoteService:
                 "content_chars": len(saved.content),
             },
         )
+        return saved
 
     @log_operation("保存报告笔记", state_parameter="state")
     def save_report_note(
         self,
         state: SummaryState,
-    ) -> None:
+    ) -> Note|None:
         if self._tool is None:
             logger.debug("笔记功能已关闭 · 跳过报告保存", extra={"event": "note_save_disabled"})
-            return
+            return None
 
         if (
             not state.structured_report
@@ -155,9 +148,6 @@ class NoteService:
             content=state.structured_report,
         )
 
-        state.report_note_id = saved.note_id
-        state.report_note_path = saved.note_path
-
         logger.info(
             "报告笔记已保存 · %d 字",
             len(saved.content),
@@ -168,3 +158,4 @@ class NoteService:
                 "content_chars": len(saved.content),
             },
         )
+        return saved

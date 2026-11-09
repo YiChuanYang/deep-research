@@ -12,7 +12,8 @@ from typing import Any, Literal
 from urllib.parse import quote, urldefrag, urlsplit
 
 from deep_researcher.logging_config import log_operation
-from deep_researcher.models import Evidence, Source, SummaryState
+from deep_researcher.models import Evidence, Source, SummaryState,EvidenceBatch
+
 
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,12 @@ class EvidenceService:
         state_parameter="state",
         task_parameter="task_id",
     )
-    def ingest(
+    @log_operation(
+        "整理证据",
+        state_parameter="state",
+        task_parameter="task_id",
+    )
+    def collect(
         self,
         state: SummaryState,
         task_id: int,
@@ -56,22 +62,25 @@ class EvidenceService:
         backend: str,
         max_chars: int,
         prefer_full_page: bool,
-    ) -> list[str]:
-        """重复材料复用编号，内容改变时保留新片段。"""
+    ) -> EvidenceBatch:
+        """整理证据，返回新目录，不修改传入的研究状态。"""
         if max_chars <= 0:
             raise ValueError("max_chars 必须为正数")
 
         task = state.get_task(task_id)
+
+        # 复制字典容器；后面只向这些新字典添加条目。
+        sources = dict(state.sources)
+        evidence_records = dict(state.evidence)
+
         selected: list[str] = []
-        previous_count = len(state.evidence)
+        previous_count = len(evidence_records)
 
         for row in results:
             raw_url = row.get("url")
-
             if not isinstance(raw_url, str):
                 continue
 
-            # 去除页面内锚点，其余 URL 参数保留。
             url = urldefrag(raw_url.strip()).url
             parts = urlsplit(url)
 
@@ -86,7 +95,6 @@ class EvidenceService:
                 if prefer_full_page
                 else None
             )
-
             kind: Literal[
                 "search_snippet", "page_excerpt"
             ] = "page_excerpt"
@@ -95,7 +103,6 @@ class EvidenceService:
                 raw = row.get("content")
                 kind = "search_snippet"
 
-            # 只有标题和 URL，没有材料正文，不登记为证据。
             if not isinstance(raw, str) or not raw.strip():
                 continue
 
@@ -106,7 +113,7 @@ class EvidenceService:
             source = next(
                 (
                     item
-                    for item in state.sources.values()
+                    for item in sources.values()
                     if item.url == url
                 ),
                 None,
@@ -114,20 +121,16 @@ class EvidenceService:
 
             if source is None:
                 source = Source(
-                    source_id=self._next_id(
-                        "S", state.sources
-                    ),
+                    source_id=self._next_id("S", sources),
                     url=url,
                     title=str(row.get("title") or url),
                 )
-                state.sources[source.source_id] = source
+                sources[source.source_id] = source
 
-            # 同一任务、来源、检索方式和片段内容相同，
-            # 视为重复取得同一份材料。
             evidence = next(
                 (
                     item
-                    for item in state.evidence.values()
+                    for item in evidence_records.values()
                     if item.task_id == task_id
                     and item.source_id == source.source_id
                     and item.text == text
@@ -142,7 +145,7 @@ class EvidenceService:
             if evidence is None:
                 evidence = Evidence(
                     evidence_id=self._next_id(
-                        "E", state.evidence
+                        "E", evidence_records
                     ),
                     source_id=source.source_id,
                     task_id=task_id,
@@ -155,26 +158,28 @@ class EvidenceService:
                     kind=kind,
                     truncated=truncated,
                 )
-
-                state.evidence[evidence.evidence_id] = evidence
+                evidence_records[
+                    evidence.evidence_id
+                ] = evidence
 
             if evidence.evidence_id not in selected:
                 selected.append(evidence.evidence_id)
 
-        task.evidence_ids = selected
-
-        logger.info(
-            "证据已登记 · 可用=%d 新增=%d",
+        logger.debug(
+            "证据已整理 · 可用=%d 新增=%d",
             len(selected),
-            len(state.evidence) - previous_count,
+            len(evidence_records) - previous_count,
             extra={
-                "event": "evidence_registered",
+                "event": "evidence_prepared",
                 "evidence_ids": selected,
-                "evidence_count": len(selected),
             },
         )
 
-        return selected
+        return EvidenceBatch(
+            sources=sources,
+            evidence=evidence_records,
+            evidence_ids=selected,
+        )
 
     @staticmethod
     def resolve(
@@ -240,7 +245,9 @@ class EvidenceService:
         text: str,
         allowed_ids: Iterable[str],
     ) -> list[str]:
-        """校验引用格式和范围，不判断语义支持关系。"""
+        """输入带有引用的文本，和所支持使用引用的编号列表，校验两点：
+                1.正文是否规范
+                2.实际引用id是否在所支持引用的列表里"""
         if re.search(
             r"https?://|www\.",
             text,
