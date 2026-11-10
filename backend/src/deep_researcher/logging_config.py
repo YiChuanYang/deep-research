@@ -53,6 +53,8 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "graph.graph_researcher": ("🚀", "research.graph"),
     "graph.graph_nodes": ("🧭", "graph.nodes"),
     "services.evidence_service": ("🧾", "services.evidence"),
+    "api.app": ("🌐", "api.app"),
+    "api.manager": ("🧵", "api.manager"),
 }
 _PREFIXES = (
     "✅",

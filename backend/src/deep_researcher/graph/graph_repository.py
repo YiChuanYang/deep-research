@@ -25,6 +25,7 @@ class RunInfo:
     max_tasks: int | None
     status: RunStatus
     last_error: str | None
+    updated_at:str=""
 
 
 class GraphRunRepository:
@@ -85,20 +86,36 @@ class GraphRunRepository:
 
         if row is None:
             raise KeyError(f"研究不存在：{run_id}")
-
+        return  self._to_info(row)
+    
+    @staticmethod
+    def _to_info(row:sqlite3.Row)->RunInfo:
         data = json.loads(row["data"])
 
         if data["version"] != 1:
             raise ValueError("运行元数据版本不兼容")
 
         return RunInfo(
-            run_id=run_id,
+            run_id=row["run_id"],
             topic=data["topic"],
             config=data["config"],
             max_tasks=data["max_tasks"],
             status=row["status"],
             last_error=row["last_error"],
+            updated_at=row["updated_at"],
         )
+
+    def list_runs(self,limit:int,offset:int)->list[RunInfo]:
+        rows = self._db.execute(
+            """SELECT * FROM graph_runs 
+            ORDER BY updated_at DESC,run_id DESC
+            LIMIT ? OFFSET ?""",
+            (limit,offset),
+        ).fetchall()
+        return [self._to_info(row) for row in rows]
+    
+
+    
 
     def update(self,run_id:str,status:RunStatus,last_error:str|None=None)->None:
         """负责更新status和lats_error字段"""

@@ -1,174 +1,270 @@
-"""研究 API 路由。"""
+"""研究创建、查询、下载与恢复接口。"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from typing import Annotated, cast
 
-from deep_researcher.api.manager import (
-    ResearchManager,
-    RunConflictError,
-)
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import Response
+
+from deep_researcher.api.manager import ResearchManager
 from deep_researcher.api.schemas import (
     AcceptedResponse,
     CitationResponse,
     ResearchRequest,
     ResearchResultResponse,
     ResumeRequest,
+    RunId,
+    RunItem,
+    RunListResponse,
     RunStatusResponse,
+    TaskProgress,
     TaskResultResponse,
 )
+from deep_researcher.graph.graph_repository import RunInfo
 
 
 router = APIRouter()
+
+
 def _manager(request: Request) -> ResearchManager:
-    """取得应用启动时创建的研究管理器。"""
-    return request.app.state.research_manager
+    return cast(
+        ResearchManager,
+        request.app.state.research_manager,
+    )
 
 
-def _get_info(
+def _accepted(run_id: str) -> AcceptedResponse:
+    return AcceptedResponse(
+        run_id=run_id,
+        status_url=f"/api/research/{run_id}",
+        result_url=f"/api/research/{run_id}/result",
+    )
+
+
+def _item(
+    info: RunInfo,
     manager: ResearchManager,
-    run_id: str,
-):
-    try:
-        return manager.get_run_info(run_id)
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="研究编号不存在",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+) -> RunItem:
+    """组合持久化状态和本进程调度信息，用于展示。"""
+    execution = manager.execution(info.run_id)
+
+    display_status = (
+        "pending"
+        if execution == "queued"
+        else "running"
+        if execution == "executing"
+        else info.status
+    )
+
+    return RunItem(
+        run_id=info.run_id,
+        topic=info.topic,
+        status=display_status,
+        updated_at=info.updated_at,
+        max_tasks=info.max_tasks,
+    )
+
 
 @router.get("/health")
-def health()->dict[str,str]:
-    return {"status":"ok"}
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
 
 @router.post(
-        "/research",
-        response_model=AcceptedResponse,
-        status_code=status.HTTP_202_ACCEPTED)
+    "/research",
+    response_model=AcceptedResponse,
+    status_code=202,
+)
 def start_research(
-    body:ResearchRequest,
-    request:Request
-)->AcceptedResponse:
-    
-    try:
-        run_id= _manager(request).start(body.topic,body.max_tasks)
+    body: ResearchRequest,
+    request: Request,
+) -> AcceptedResponse:
+    run_id = _manager(request).start(
+        body.topic,
+        body.max_tasks,
+    )
+    return _accepted(run_id)
 
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
 
-    return AcceptedResponse(run_id=run_id)
+@router.get(
+    "/research",
+    response_model=RunListResponse,
+)
+def list_research(
+    request: Request,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> RunListResponse:
+    manager = _manager(request)
 
-@router.get("/research/{run_id}",
-            response_model=RunStatusResponse)
+    rows, has_more = manager.list_runs(
+        limit=limit,
+        offset=offset,
+    )
+
+    return RunListResponse(
+        items=[_item(info, manager) for info in rows],
+        limit=limit,
+        offset=offset,
+        has_more=has_more,
+    )
+
+
+@router.get(
+    "/research/{run_id}",
+    response_model=RunStatusResponse,
+)
 def get_research_status(
-    run_id:str,
-    request:Request,
-)->RunStatusResponse:
-    info = _get_info(_manager(request), run_id)
+    run_id: RunId,
+    request: Request,
+) -> RunStatusResponse:
+    manager = _manager(request)
+    snapshot = manager.get_snapshot(run_id)
+    info = snapshot.info
 
-    # 不把内部异常原文直接暴露给 HTTP 客户端。
-    error_message = (
-        "研究执行失败，请按 run_id 检查服务日志"
-        if info.status == "failed"
-        else None
+    tasks = (
+        snapshot.state.todo_items
+        if snapshot.state is not None
+        else []
+    )
+
+    selected = (
+        tasks
+        if info.max_tasks is None
+        else tasks[:info.max_tasks]
+    )
+    selected_ids = {task.id for task in selected}
+
+    execution = manager.execution(run_id)
+    item = _item(info, manager)
+
+    # 图已完成但元数据未及时更新时，
+    # 结果可用性以图检查点为准，不在 GET 接口中修改数据库。
+    display_status = (
+        "completed"
+        if snapshot.report_ready
+        else item.status
     )
 
     return RunStatusResponse(
-        run_id=info.run_id,
-        topic=info.topic,
-        status=info.status,
-        error_message=error_message,
+        **{
+            **item.model_dump(),
+            "status": display_status,
+        },
+        execution=execution,
+        next_nodes=list(snapshot.next_nodes),
+        active_task_id=snapshot.active_task_id,
+        planned_tasks=len(tasks),
+        selected_tasks=len(selected),
+        completed_tasks=sum(
+            task.status == "completed"
+            for task in selected
+        ),
+        skipped_tasks=sum(
+            task.status == "skipped"
+            for task in selected
+        ),
+        tasks=[
+            TaskProgress(
+                id=task.id,
+                title=task.title,
+                status=task.status,
+                selected=task.id in selected_ids,
+                evidence_count=len(task.evidence_ids),
+                citation_count=len(task.citation_ids),
+            )
+            for task in tasks
+        ],
+        report_ready=snapshot.report_ready,
+        requires_recovery_confirmation=(
+            info.status == "running"
+            and execution == "idle"
+            and not snapshot.report_ready
+        ),
+        error_message=(
+            "上次执行失败，可恢复研究；详情请按 run_id 查看日志"
+            if display_status == "failed"
+            else None
+        ),
     )
+
+
 @router.get(
     "/research/{run_id}/result",
     response_model=ResearchResultResponse,
 )
 def get_research_result(
-    run_id: str,
+    run_id: RunId,
     request: Request,
 ) -> ResearchResultResponse:
-    manager = _manager(request)
-    info = _get_info(manager, run_id)
+    result = _manager(request).get_result(run_id)
 
-    if info.status != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="研究尚未完成",
-        )
+    citations: list[CitationResponse] = []
 
-    result = manager.get_result(run_id)
-
-    citations = []
     for evidence_id in result.report_citation_ids:
         evidence = result.evidence[evidence_id]
         source = result.sources[evidence.source_id]
 
         citations.append(
             CitationResponse(
-                evidence_id=evidence.evidence_id,
+                evidence_id=evidence_id,
                 title=source.title,
                 url=source.url,
                 text=evidence.text,
             )
         )
 
-    tasks = [
-        TaskResultResponse(
-            id=task.id,
-            title=task.title,
-            status=task.status,
-            summary=task.summary,
-            citation_ids=task.citation_ids,
-        )
-        for task in result.todo_items
-    ]
-
     return ResearchResultResponse(
         run_id=result.run_id,
         report_markdown=result.report_markdown or "",
-        tasks=tasks,
+        tasks=[
+            TaskResultResponse(
+                id=task.id,
+                title=task.title,
+                status=task.status,
+                summary=task.summary,
+                citation_ids=task.citation_ids,
+            )
+            for task in result.todo_items
+        ],
         citations=citations,
+    )
+
+
+@router.get(
+    "/research/{run_id}/report",
+    response_class=Response,
+)
+def download_report(
+    run_id: RunId,
+    request: Request,
+) -> Response:
+    result = _manager(request).get_result(run_id)
+
+    return Response(
+        content=result.report_markdown or "",
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="research-{run_id}.md"'
+            ),
+        },
     )
 
 
 @router.post(
     "/research/{run_id}/resume",
     response_model=AcceptedResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=202,
 )
 def resume_research(
-    run_id: str,
+    run_id: RunId,
     body: ResumeRequest,
     request: Request,
 ) -> AcceptedResponse:
-    try:
-        _manager(request).resume(
-            run_id,
-            recover_interrupted=body.recover_interrupted,
-        )
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="研究编号不存在",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-    except RunConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-
-    return AcceptedResponse(run_id=run_id)
-    
+    _manager(request).resume(
+        run_id,
+        recover_interrupted=body.recover_interrupted,
+    )
+    return _accepted(run_id)

@@ -1,67 +1,103 @@
-"""API 的请求与响应模型。"""
+"""HTTP 请求和响应模型。"""
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from deep_researcher.graph.graph_repository import RunStatus
+from deep_researcher.models import TaskStatus
 
-RunStatus = Literal[
-    "pending",
-    "running",
-    "failed",
-    "completed",
+
+RunId = Annotated[
+    str,
+    Field(pattern=r"^[0-9a-f]{32}$"),
 ]
 
 
 class ResearchRequest(BaseModel):
-    """创建研究请求。"""
-
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
     )
 
     topic: str = Field(min_length=2, max_length=500)
-    max_tasks: int | None = Field(default=None, gt=0)
+    max_tasks: int | None = Field(
+        default=None,
+        gt=0,
+        le=20,
+        strict=True,
+    )
 
 
 class ResumeRequest(BaseModel):
-    """恢复研究请求。"""
+    model_config = ConfigDict(extra="forbid")
 
-    recover_interrupted: bool = False
+    recover_interrupted: bool = Field(
+        default=False,
+        strict=True,
+    )
 
 
 class AcceptedResponse(BaseModel):
-    """后台任务已接受。"""
-
     run_id: str
     accepted: bool = True
+    status_url: str
+    result_url: str
 
 
-class RunStatusResponse(BaseModel):
-    """研究运行状态。"""
-
+class RunItem(BaseModel):
     run_id: str
     topic: str
     status: RunStatus
-    error_message: str | None = None
+    updated_at: str
+    max_tasks: int | None
+
+
+class RunListResponse(BaseModel):
+    items: list[RunItem]
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class TaskProgress(BaseModel):
+    id: int
+    title: str
+    status: TaskStatus
+    selected: bool
+    evidence_count: int
+    citation_count: int
+
+
+class RunStatusResponse(RunItem):
+    execution: Literal["idle", "queued", "executing"]
+
+    next_nodes: list[str]
+    active_task_id: int | None
+
+    planned_tasks: int
+    selected_tasks: int
+    completed_tasks: int
+    skipped_tasks: int
+
+    tasks: list[TaskProgress]
+
+    report_ready: bool
+    requires_recovery_confirmation: bool
+    error_message: str | None
 
 
 class TaskResultResponse(BaseModel):
-    """研究任务摘要。"""
-
     id: int
     title: str
-    status: str
+    status: TaskStatus
     summary: str | None
     citation_ids: list[str]
 
 
 class CitationResponse(BaseModel):
-    """报告引用对应的证据及来源。"""
-
     evidence_id: str
     title: str
     url: str
@@ -69,8 +105,6 @@ class CitationResponse(BaseModel):
 
 
 class ResearchResultResponse(BaseModel):
-    """研究结果。"""
-
     run_id: str
     report_markdown: str
     tasks: list[TaskResultResponse]

@@ -9,8 +9,9 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from dataclasses import dataclass
+from filelock import FileLock, Timeout as FileLockTimeout
 
-from filelock import FileLock
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from deep_researcher.config import Configuration, get_config
@@ -22,6 +23,7 @@ from deep_researcher.graph.graph_repository import GraphRunRepository,RunInfo
 from deep_researcher.graph.graph_state import (
     ResearchGraphState,
     encode_state,
+    decode_state,
     to_output,
 )
 from deep_researcher.logging_config import (
@@ -41,6 +43,28 @@ DEFAULT_GRAPH_DIR = (
     / "data"
     / "langgraph"
 )
+
+@dataclass(frozen=True)
+class RunSnapshot:
+    """一次查询取得的运行记录和图检查点视图。"""
+
+    info: RunInfo
+    state: SummaryState | None
+    next_nodes: tuple[str, ...]
+    active_task_id: int | None
+    graph_finished: bool
+
+    @property
+    def report_ready(self) -> bool:
+        """判断是否已经有可交付的最终报告。"""
+        return (
+            self.graph_finished
+            and not self.next_nodes
+            and self.state is not None
+            and bool(
+                (self.state.structured_report or "").strip()
+            )
+        )
 
 
 
@@ -424,48 +448,130 @@ class GraphDeepResearcher:
         with closing(GraphRunRepository(metadata_path)) as repository:
             return repository.load(run_id)
 
+    def list_runs(self,limit:int,offset:int=0):
+         if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("分页参数无效")
 
-    def get_result(self,run_id:str)->SummaryStateOutput:
-        """检查已完成研究的图检查点，组装对外结果"""
+         path = self._directory / "runs.sqlite3"
+
+         if not path.is_file():
+            return [], False
+         with closing(
+             GraphRunRepository(path)
+         ) as repository:
+             rows = repository.list_runs(limit+1,offset)
+
+         return rows[:limit],len(rows)>limit
+
+    def read_run(self, run_id: str) -> RunSnapshot:
+        """读取检查点，不执行节点，也不校验原模型连接配置。"""
         info = self.get_run_info(run_id)
-        if info.status != "completed":
-            raise RuntimeError("研究尚未完成")
+        path = self._directory / "checkpoints.sqlite3"
 
-        checkpoint_path = (
-            self._directory / "checkpoints.sqlite3"
-        )
-        if not checkpoint_path.is_file():
-            raise FileNotFoundError("图检查点文件不存在")
-        config = self._base_config.for_resume(info.config)
-        nodes = self._nodes_factory(config,uuid4().hex)
+        if not path.is_file():
+            if info.status == "completed":
+                raise RuntimeError(
+                    "已完成研究的检查点文件缺失"
+                )
 
+            return RunSnapshot(
+                info=info,
+                state=None,
+                next_nodes=(),
+                active_task_id=None,
+                graph_finished=False,
+            )
+        nodes = self._nodes_factory(
+            self._base_config,
+            uuid4().hex)
         try:
             with SqliteSaver.from_conn_string(
-                str(checkpoint_path)
+                str(path)
             ) as checkpointer:
-                graph = build_graph(nodes, checkpointer)
-
-                run_config: dict[str, Any] = {
-                    "configurable": {
-                        "thread_id": run_id,
-                    },
-                }
-
-                snapshot = graph.get_state(run_config)
-
-                if (
-                    not snapshot.values
-                    or snapshot.next
-                    or not snapshot.values.get("finished")
-                ):
-                    raise RuntimeError(
-                        "运行记录显示已完成，但图检查点尚未完成"
-                    )
-
-                payload = snapshot.values.get("payload")
-                if not isinstance(payload, dict):
-                    raise RuntimeError("图检查点中缺少研究状态")
-
-                return to_output(payload)
-        finally:
+                graph = build_graph(nodes,checkpointer)
+                
+                snapshot = graph.get_state(
+                    {
+                    
+                        "configurable":{
+                            "thread_id":run_id,
+                        },
+                        
+                    }
+                )
+        finally :
             nodes.close()
+
+        values = snapshot.values or {}
+        payload = values.get("payload")
+
+        state: SummaryState | None = None
+
+        if payload is not None:
+            if values.get("version") != 1:
+                raise RuntimeError("图状态版本不兼容")
+
+            if not isinstance(payload, dict):
+                raise RuntimeError("图业务状态格式错误")
+
+            state = decode_state(payload)
+
+            if state.run_id != run_id:
+                raise RuntimeError(
+                    "图状态与研究编号不一致"
+                )
+
+        result = RunSnapshot(
+            info=info,
+            state=state,
+            next_nodes=tuple(snapshot.next),
+            active_task_id=values.get("active_task_id"),
+            graph_finished=values.get("finished") is True,
+        )
+
+        if info.status == "completed" and not result.report_ready:
+            raise RuntimeError(
+                "已完成运行与图检查点不一致"
+            )
+
+        return result
+        
+        
+
+
+
+    def get_result(self, run_id: str) -> SummaryStateOutput:
+        """读取可交付的最终结果。"""
+        snapshot = self.read_run(run_id)
+
+        if not snapshot.report_ready or snapshot.state is None:
+            raise RuntimeError("研究结果尚未就绪")
+
+        return to_output(
+            encode_state(snapshot.state)
+        )
+    def mark_failed_if_idle(
+        self,
+        run_id: str,
+        message: str,
+    ) -> None:
+        """补记入队或图初始化失败，不覆盖其他执行者占用的研究。"""
+        lock_path = self._directory / f"{run_id}.lock"
+
+        try:
+            with FileLock(str(lock_path), timeout=0):
+                with closing(
+                    GraphRunRepository(
+                        self._directory / "runs.sqlite3"
+                    )
+                ) as repository:
+                    info = repository.load(run_id)
+
+                    if info.status in {"pending", "running"}:
+                        repository.update(
+                            run_id,
+                            "failed",
+                            message,
+                        )
+        except FileLockTimeout:
+            return
