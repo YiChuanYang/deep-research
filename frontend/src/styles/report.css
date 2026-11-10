@@ -1,0 +1,22 @@
+.prose { font-size: 14px; line-height: 2; color: #45543d; overflow-wrap: anywhere; }
+.prose h1, .prose h2, .prose h3, .prose h4 { font-family: var(--serif); font-weight: 500; color: #354c2d; line-height: 1.7; margin: 27px 0 13px; }
+.prose h1 { font-size: 27px; padding-bottom: 15px; }
+.prose h2 { font-size: 21px; }
+.prose h3 { font-size: 17px; }
+.prose h4 { font-size: 15px; }
+.prose p { margin: 13px 0; }
+.prose ul, .prose ol { padding-left: 23px; }
+.prose li { padding-left: 3px; margin: 6px 0; }
+.prose strong { font-weight: 600; color: #405a33; }
+.prose blockquote { margin: 22px 0; padding: 3px 0 3px 18px; border-left: 2px solid #c8d8bc; color: #819273; }
+.prose a { color: #527442; }
+.prose pre { background: #f3f6ee; padding: 16px; border-radius: 5px; overflow-x: auto; font-size: 12px; line-height: 1.8; }
+.prose code { font-family: Consolas, 'SFMono-Regular', monospace; font-size: .9em; background: #f0f4ea; padding: 2px 4px; border-radius: 3px; }
+.prose pre code { padding: 0; background: transparent; }
+.prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; margin: 20px 0; }
+.prose th, .prose td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #e4ebdc; }
+.prose th { background: #f4f7ef; font-weight: 500; }
+.prose hr { border: 0; border-top: 1px solid #e4ebdc; margin: 28px 0; }
+.citation-link { display: inline; border: 0; border-radius: 3px; padding: 1px 4px; margin: 0 2px; color: #62814f; background: #edf3e6; font-family: Consolas, monospace; font-size: .8em; cursor: pointer; vertical-align: baseline; }
+.citation-link:hover { background: #dce8d2; }
+@media (max-width: 560px) { .prose { font-size: 13px; } .prose h1 { font-size: 23px; } .prose h2 { font-size: 19px; } }
