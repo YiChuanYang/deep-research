@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "exported_at": "2026-11-10T15:06:31+00:00",
+  "rule_version": 1,
+  "source_data_dir": "C:\\Users\\Redamancy\\Desktop\\deep-research\\backend\\data\\langgraph",
+  "selected_count": 1,
+  "cases": [
+    {
+      "run_id": "484ed738b40a46398ed7b929d6af248b",
+      "topic": "高等代数课程的主要内容",
+      "status": "exported",
+      "report_sha256": "d68049413b709fa308bd832e4172661e4a1ceedee9bcfc80bb7f05090e5675e2"
+    }
+  ],
+  "note": "本目录是历史运行的评测副本；exported_at 是导出时间，不是研究生成时间。"
+}
