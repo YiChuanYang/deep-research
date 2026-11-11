@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 from dataclasses import dataclass
 from filelock import FileLock, Timeout as FileLockTimeout
-
+from deep_researcher.tools.note_tool import NoteTool
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from deep_researcher.config import Configuration, get_config
@@ -410,6 +410,102 @@ class GraphDeepResearcher:
 
             finally:
                 nodes.close()
+
+    def delete_run(self, run_id: str) -> None:
+          """删除研究及关联数据；不存在时视为已经删除。"""
+          if re.fullmatch(
+              r"[0-9a-f]{32}",
+              run_id,
+          ) is None:
+              raise ValueError(
+                  "请使用完整的 32 位研究编号"
+              )
+
+          metadata_path = (
+              self._directory / "runs.sqlite3"
+          )
+
+          if not metadata_path.is_file():
+              return
+
+          with (
+              FileLock(
+                  str(self._directory / f"{run_id}.lock"),
+                  timeout=0,
+              ),
+              log_context(
+                  run_id=run_id,
+                  stage="删除研究",
+              ),
+              closing(
+                  GraphRunRepository(metadata_path)
+              ) as repository,
+          ):
+              try:
+                  info = repository.load(
+                      run_id,
+                      include_deleted=True,
+                  )
+              except KeyError:
+                  # 已经删除，再次请求仍然成功。
+                  return
+
+              saved_workspace = info.config.get(
+                  "notes_workspace"
+              )
+
+              if (
+                  not isinstance(saved_workspace, str)
+                  or not saved_workspace.strip()
+              ):
+                  raise ValueError(
+                      "历史配置缺少笔记目录，请先补齐记录"
+                  )
+
+              workspace = Path(saved_workspace)
+
+              if not workspace.is_absolute():
+                  raise ValueError(
+                      "历史笔记目录不是绝对路径，请先迁移记录"
+                  )
+
+              logger.info(
+                  "开始删除研究 · 主题=%s",
+                  info.topic,
+                  extra={
+                      "event": "research_delete_started",
+                  },
+              )
+
+              # 此后普通查询和恢复都无法取得这条记录。
+              repository.mark_deleted(run_id)
+
+              checkpoint_path = (
+                  self._directory / "checkpoints.sqlite3"
+              )
+
+              if checkpoint_path.is_file():
+                  with SqliteSaver.from_conn_string(
+                      str(checkpoint_path)
+                  ) as checkpointer:
+                      checkpointer.delete_thread(run_id)
+
+              removed_files = NoteTool.delete_run_notes(
+                  workspace,
+                  run_id,
+              )
+
+              # 最后删除元数据；失败重试还需要其中的配置。
+              repository.purge_deleted(run_id)
+
+              logger.info(
+                  "研究已删除 · 笔记文件=%d",
+                  removed_files,
+                  extra={
+                      "event": "research_deleted",
+                      "removed_files": removed_files,
+                  },
+              )
 
 
     #面向fastapi的方法

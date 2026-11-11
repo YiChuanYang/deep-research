@@ -268,3 +268,16 @@ def resume_research(
         recover_interrupted=body.recover_interrupted,
     )
     return _accepted(run_id)
+
+@router.delete(
+      "/research/{run_id}",
+      status_code=204,
+      response_class=Response,
+  )
+def delete_research(
+      run_id: RunId,
+      request: Request,
+  ) -> Response:
+      _manager(request).delete(run_id)
+
+      return Response(status_code=204)

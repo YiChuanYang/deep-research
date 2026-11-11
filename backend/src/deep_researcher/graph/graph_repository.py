@@ -38,6 +38,7 @@ class GraphRunRepository:
         self._db.row_factory = sqlite3.Row
 
         with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
             self._db.execute(
                 """CREATE TABLE IF NOT EXISTS graph_runs (
                     run_id TEXT PRIMARY KEY,
@@ -47,46 +48,71 @@ class GraphRunRepository:
                     updated_at TEXT NOT NULL   
                 )"""
             )
+            columns = {
+                row["name"] for row in self._db.execute("PRAGMA table_info(graph_runs)").fetchall()
+            }
+            if "deleted_at" not in columns:
+                self._db.execute("ALTER TABLE graph_runs"
+                "                 ADD COLUMN deleted_at TEXT")
+
+
     @staticmethod
     def _now()->str:
         return datetime.now(timezone.utc).isoformat()
 
     def create(
-            self,
-            run_id:str,
-            topic:str,
-            config:dict[str,Any],
-            max_tasks:int|None
-    )->None:
-        """在创建新数据时调用，只构造数据表中data和run_id字段"""
-        data = json.dumps(
-            {
-                "version":1,
-                "topic":topic,
-                "config":config,
-                "max_tasks":max_tasks
-            },
-            ensure_ascii=False
-        )
-        with self._db:
-            self._db.execute(
-                """
-                INSERT INTO graph_runs
-                VALUES (?,?,"pending",NULL,?)
-""",
-                (run_id,data,self._now()),
-            )
+          self,
+          run_id: str,
+          topic: str,
+          config: dict[str, Any],
+          max_tasks: int | None,
+      ) -> None:
+          data = json.dumps(
+              {
+                  "version": 1,
+                  "topic": topic,
+                  "config": config,
+                  "max_tasks": max_tasks,
+              },
+              ensure_ascii=False,
+          )
 
-    def load(self,run_id:str)->RunInfo:
-        """从数据库中读取数据并以上述类返回"""
-        row = self._db.execute(
-            "SELECT * FROM graph_runs WHERE run_id=?",
-            (run_id,),
-        ).fetchone()
+          with self._db:
+              self._db.execute(
+                  """
+                  INSERT INTO graph_runs (
+                      run_id,
+                      data,
+                      status,
+                      last_error,
+                      updated_at,
+                      deleted_at
+                  )
+                  VALUES (?, ?, 'pending', NULL, ?, NULL)
+                  """,
+                  (run_id, data, self._now()),
+              )
 
-        if row is None:
-            raise KeyError(f"研究不存在：{run_id}")
-        return  self._to_info(row)
+    def load(
+          self,
+          run_id: str,
+          *,
+          include_deleted: bool = False,
+      ) -> RunInfo:
+          row = self._db.execute(
+              """
+              SELECT *
+              FROM graph_runs
+              WHERE run_id = ?
+                AND (? OR deleted_at IS NULL)
+              """,
+              (run_id, include_deleted),
+          ).fetchone()
+
+          if row is None:
+              raise KeyError(f"研究不存在：{run_id}")
+
+          return self._to_info(row)
     
     @staticmethod
     def _to_info(row:sqlite3.Row)->RunInfo:
@@ -108,6 +134,7 @@ class GraphRunRepository:
     def list_runs(self,limit:int,offset:int)->list[RunInfo]:
         rows = self._db.execute(
             """SELECT * FROM graph_runs 
+            WHERE deleted_at IS NULL
             ORDER BY updated_at DESC,run_id DESC
             LIMIT ? OFFSET ?""",
             (limit,offset),
@@ -124,6 +151,7 @@ class GraphRunRepository:
                 """UPDATE graph_runs 
                    SET status=?,last_error=?,updated_at=?
                    WHERE run_id=?
+                   AND deleted_at IS NULL
                 
                 """,
                 (status,last_error,self._now(),run_id),
@@ -132,6 +160,40 @@ class GraphRunRepository:
                 raise KeyError(
                     f"研究不存在：{run_id}"
                 )
+
+    def mark_deleted(self, run_id: str) -> None:
+          """先隐藏研究并禁止恢复，保留清理所需的配置。"""
+          with self._db:
+              cursor = self._db.execute(
+                  """
+                  UPDATE graph_runs
+                  SET deleted_at = COALESCE(deleted_at, ?)
+                  WHERE run_id = ?
+                  """,
+                  (self._now(), run_id),
+              )
+
+              if cursor.rowcount != 1:
+                  raise KeyError(
+                      f"研究不存在：{run_id}"
+                  )
+
+    def purge_deleted(self, run_id: str) -> None:
+          """关联数据清理成功后，最后删除元数据。"""
+          with self._db:
+              cursor = self._db.execute(
+                  """
+                  DELETE FROM graph_runs
+                  WHERE run_id = ?
+                    AND deleted_at IS NOT NULL
+                  """,
+                  (run_id,),
+              )
+
+              if cursor.rowcount != 1:
+                  raise KeyError(
+                      f"没有待清理的研究：{run_id}"
+                  )
 
     def close(self) -> None:
         self._db.close()

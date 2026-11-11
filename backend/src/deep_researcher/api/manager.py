@@ -185,6 +185,68 @@ class ResearchManager:
                 "run_id": run_id,
             },
         )
+    def delete(self, run_id: str) -> None:
+          """拒绝删除本进程正在排队或执行的研究。"""
+          with (
+              self._lock,
+              log_context(
+                  run_id=run_id,
+                  stage="删除研究",
+              ),
+          ):
+              if self._closed:
+                  raise ApiError(
+                      503,
+                      "service_closing",
+                      "服务正在关闭",
+                      run_id=run_id,
+                  )
+
+              current = self._jobs.get(run_id)
+
+              if current is not None and not current.done():
+                  logger.warning(
+                      "暂不能删除 · 研究已排队或正在执行"
+                  )
+
+                  raise ApiError(
+                      409,
+                      "research_busy",
+                      "研究已排队或正在执行，请结束后再删除",
+                      run_id=run_id,
+                  )
+
+              try:
+                  self._researcher().delete_run(run_id)
+
+              except FileLockTimeout as exc:
+                  logger.warning(
+                      "暂不能删除 · 研究被其他执行者占用"
+                  )
+
+                  raise ApiError(
+                      409,
+                      "research_busy",
+                      "研究正在其他进程中执行，请结束后再删除",
+                      run_id=run_id,
+                  ) from exc
+
+              except Exception as exc:
+                  error_id = log_exception_once(
+                      logger,
+                      "研究删除未完成",
+                      error=exc,
+                  )
+
+                  raise ApiError(
+                      500,
+                      "delete_incomplete",
+                      "删除未完成，可以按原研究编号重试",
+                      run_id=run_id,
+                      error_id=error_id,
+                  ) from exc
+
+              self._jobs.pop(run_id, None)
 
     def _submit_locked(
         self,
@@ -311,19 +373,18 @@ class ResearchManager:
             )
 
     def get_snapshot(self, run_id: str) -> RunSnapshot:
-        researcher = self._researcher()
+          researcher = self._researcher()
 
-        try:
-            researcher.get_run_info(run_id)
-        except KeyError as exc:
-            raise ApiError(
-                404,
-                "run_not_found",
-                "研究不存在",
-                run_id=run_id,
-            ) from exc
+          try:
+              return researcher.read_run(run_id)
 
-        return researcher.read_run(run_id)
+          except (KeyError, FileNotFoundError) as exc:
+              raise ApiError(
+                  404,
+                  "run_not_found",
+                  "研究不存在",
+                  run_id=run_id,
+              ) from exc
 
     def list_runs(
         self,

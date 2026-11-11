@@ -7,7 +7,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 from uuid import uuid4
-
+import re
 from pydantic import BaseModel, ConfigDict, Field
 
 from deep_researcher.config import Configuration
@@ -242,3 +242,61 @@ class NoteTool(Tool):
                 required=False,
             ),
         ]
+
+    @staticmethod
+    def delete_run_notes(
+          workspace: Path,
+          run_id: str,
+      ) -> int:
+          """删除指定研究的笔记及遗留临时文件，返回删除文件数。"""
+          if re.fullmatch(
+              r"[0-9a-f]{32}",
+              run_id,
+          ) is None:
+              raise ValueError("研究编号格式不正确")
+
+          if not workspace.is_absolute():
+              raise ValueError(
+                  "删除笔记需要历史配置中的绝对目录"
+              )
+
+          root = workspace.resolve()
+
+          if not root.exists():
+              return 0
+
+          if not root.is_dir():
+              raise ValueError(
+                  "笔记工作目录不是文件夹"
+              )
+
+          stem = (
+              rf"note_{run_id}_"
+              rf"(?:report|task_[1-9]\d*)\.json"
+          )
+
+          pattern = re.compile(
+              rf"(?:{stem}|\.{stem}\.[0-9a-f]{{32}}\.tmp)"
+          )
+
+          targets = [
+              path
+              for path in root.iterdir()
+              if pattern.fullmatch(path.name)
+          ]
+
+          # 先验证全部候选文件，再开始删除。
+          for path in targets:
+              if (
+                  path.is_symlink()
+                  or path.resolve().parent != root
+                  or not path.is_file()
+              ):
+                  raise ValueError(
+                      f"笔记路径异常，停止删除：{path.name}"
+                  )
+
+          for path in targets:
+              path.unlink(missing_ok=True)
+
+          return len(targets)
