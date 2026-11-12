@@ -7,7 +7,6 @@ import json
 import logging
 import re
 import sqlite3
-import subprocess
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -19,15 +18,14 @@ from deep_researcher.config import Configuration
 from deep_researcher.graph.graph_researcher import (
     GraphDeepResearcher,
 )
-from deep_researcher.graph.graph_state import decode_state
 from deep_researcher.logging_config import setup_logging
 from deep_researcher.models import SummaryState
 
 from evals.checks import (
     inspect_state,
-    score_review,
     text_hash,
 )
+from evals.artifacts import make_review_template, read_assessment, read_json, write_json
 
 
 logger = logging.getLogger(__name__)
@@ -56,21 +54,12 @@ def _utc_now() -> str:
 
 def _write_json(path: Path, data: Any) -> None:
     """以 UTF-8 写入格式化 JSON。"""
-    path.write_text(
-        json.dumps(
-            data,
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    write_json(path, data)
 
 
 def _read_json(path: Path) -> Any:
     """读取 JSON。"""
-    return json.loads(
-        path.read_text(encoding="utf-8")
-    )
+    return read_json(path)
 
 
 def _sqlite_readonly_uri(path: Path) -> str:
@@ -104,11 +93,11 @@ def _backup_sqlite(
     )
 
     with (
-        sqlite3.connect(
+        closing(sqlite3.connect(
             _sqlite_readonly_uri(source),
             uri=True,
-        ) as source_db,
-        sqlite3.connect(target) as target_db,
+        )) as source_db,
+        closing(sqlite3.connect(target)) as target_db,
     ):
         source_db.backup(target_db)
 
@@ -124,17 +113,20 @@ def _read_completed_runs(
             f"运行数据库不存在：{path}"
         )
 
-    with sqlite3.connect(
+    with closing(sqlite3.connect(
         _sqlite_readonly_uri(path),
         uri=True,
-    ) as db:
+    )) as db:
         db.row_factory = sqlite3.Row
+        columns = {row[1] for row in db.execute("PRAGMA table_info(graph_runs)")}
+        active_only = "AND deleted_at IS NULL" if "deleted_at" in columns else ""
 
         rows = db.execute(
-            """
+            f"""
             SELECT run_id, data, updated_at
             FROM graph_runs
             WHERE status = 'completed'
+            {active_only}
             ORDER BY updated_at DESC, run_id DESC
             """
         ).fetchall()
@@ -160,27 +152,7 @@ def _review_template(
     checks: dict[str, Any],
 ) -> dict[str, Any]:
     """创建一份等待人工填写的评分表。"""
-    return {
-        "schema_version": 1,
-        "run_id": state.run_id,
-        "report_sha256": checks["report_sha256"],
-        "status": "pending",
-        "reviewer": "",
-        "key_points": [
-            {
-                "point": "",
-                "score": None,
-                "reason": "",
-            }
-        ],
-        "evidence_sufficiency": "uncertain",
-        "limitations_score": None,
-        "limitations_reason": "",
-        "claim_inventory_complete": False,
-        "no_claims_reason": "",
-        "claims": [],
-        "notes": "",
-    }
+    return make_review_template(state, checks)
 
 
 def _export_one(
@@ -444,6 +416,12 @@ def summarize_batch(batch_dir: Path) -> None:
         batch_dir / "manifest.json"
     )
 
+    if manifest.get("kind") == "fixed_question_suite":
+        from evals.summarize import summarize_suite
+        summarize_suite(batch_dir)
+        print(f"汇总：{batch_dir / 'summary.md'}")
+        return
+
     rows: list[dict[str, Any]] = []
 
     for item in manifest["cases"]:
@@ -461,47 +439,14 @@ def summarize_batch(batch_dir: Path) -> None:
         case_dir = batch_dir / "cases" / run_id
 
         try:
-            snapshot = _read_json(
-                case_dir / "snapshot.json"
-            )
-            checks = _read_json(
-                case_dir / "checks.json"
-            )
-            review = _read_json(
-                case_dir / "review.json"
-            )
-
-            state = decode_state(
-                snapshot["state"]
-            )
-
-            score = score_review(
-                review,
-                state,
-                checks,
-            )
-
-            if score is None:
-                rows.append(
-                    {
-                        "run_id": run_id,
-                        "status": "pending",
-                        "rule_status": checks[
-                            "report_check"
-                        ]["status"],
-                    }
-                )
-            else:
-                rows.append(
-                    {
-                        "run_id": run_id,
-                        "status": "reviewed",
-                        "rule_status": checks[
-                            "report_check"
-                        ]["status"],
-                        **score,
-                    }
-                )
+            assessment = read_assessment(case_dir, expected_run_id=run_id)
+            rows.append({
+                "run_id": run_id,
+                "status": assessment["review_status"],
+                "rule_status": assessment["report_check"]["status"],
+                **(assessment.get("score") or {}),
+                **({"message": assessment["review_error"]} if "review_error" in assessment else {}),
+            })
 
         except Exception as exc:
             rows.append(

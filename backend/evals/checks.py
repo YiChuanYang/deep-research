@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import asdict
 from typing import Any
 
+from deep_researcher.graph.graph_state import decode_state
 from deep_researcher.models import SummaryState
 from deep_researcher.services.evidence_service import (
     CITATION,
@@ -207,6 +209,10 @@ def inspect_state(state: SummaryState) -> dict[str, Any]:
                 allowed_report_ids.append(citation_id)
 
     association_errors: list[str] = []
+    try:
+        decode_state(asdict(state))
+    except (ValueError, TypeError, KeyError) as exc:
+        association_errors.append(str(exc))
 
     for citation_id in state.report_citation_ids:
         try:
@@ -235,8 +241,15 @@ def inspect_state(state: SummaryState) -> dict[str, Any]:
             recorded_ids=state.report_citation_ids,
         )
 
+    if association_errors or any(
+        item["status"] == "fail" for item in [report_check, *task_checks]
+    ):
+        overall_status = "fail"
+    else:
+        overall_status = report_check["status"]
+
     return {
-        "rule_version": 1,
+        "rule_version": 2,
         "report_sha256": text_hash(
             state.structured_report or ""
         ),
@@ -244,6 +257,10 @@ def inspect_state(state: SummaryState) -> dict[str, Any]:
         "body_boundary": boundary_reason,
         "task_checks": task_checks,
         "report_check": report_check,
+        "overall_check": {
+            "status": overall_status,
+            "reason": "综合任务摘要、报告引用和证据关联；不判断事实真实性",
+        },
         "association_errors": association_errors,
         "counts": {
             "planned_tasks": len(state.todo_items),
@@ -268,6 +285,8 @@ def score_review(
     review: dict[str, Any],
     state: SummaryState,
     checks: dict[str, Any],
+    *,
+    expected_points: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """
     校验人工评分表并计算描述性指标。
@@ -275,15 +294,19 @@ def score_review(
     status=pending 时返回 None，表示人工评分还没有完成。
     status=done 时才会验证完整字段。
     """
+    if not isinstance(review, dict) or review.get("schema_version") != 1:
+        raise ValueError("评分表必须是 schema_version=1 的对象")
     status = review.get("status")
 
-    if status == "pending":
-        return None
-
-    if status != "done":
-        raise ValueError(
-            "review.status 必须是 pending 或 done"
-        )
+    if checks.get("report_sha256") != text_hash(state.structured_report or ""):
+        raise ValueError("自动检查与报告版本不一致，请重新检查")
+    if expected_points is not None:
+        supplied = review.get("key_points")
+        if not isinstance(supplied, list) or [
+            point.get("point") if isinstance(point, dict) else None
+            for point in supplied
+        ] != expected_points:
+            raise ValueError("评分要点与固定题集不一致，不能增删或改写")
 
     if review.get("run_id") != state.run_id:
         raise ValueError("评分表和研究编号不匹配")
@@ -297,6 +320,11 @@ def score_review(
             "报告已经变化，不能直接复用旧评分"
         )
 
+    if status == "pending":
+        return None
+    if status != "done":
+        raise ValueError("review.status 必须是 pending 或 done")
+
     reviewer = review.get("reviewer")
 
     if not isinstance(reviewer, str) or not reviewer.strip():
@@ -308,6 +336,14 @@ def score_review(
         raise ValueError(
             "请填写至少一个预期覆盖要点"
         )
+
+    point_texts = [
+        point.get("point") for point in points if isinstance(point, dict)
+    ]
+    if all(isinstance(point, str) for point in point_texts) and (
+        len(set(point_texts)) != len(point_texts)
+    ):
+        raise ValueError("评分要点不得重复")
 
     total_score = 0
 
@@ -389,6 +425,8 @@ def score_review(
     supported_claims = 0
     partial_claims = 0
     uncertain_claims = 0
+    unsupported_claims = 0
+    seen_claims: set[str] = set()
 
     valid_verdicts = {
         "supported",
@@ -408,6 +446,9 @@ def score_review(
 
         if not _has_text(claim_text):
             raise ValueError("结论 text 不能为空")
+        if claim_text.strip() in seen_claims:
+            raise ValueError("同一结论不得重复计分")
+        seen_claims.add(claim_text.strip())
 
         # 报告正文边界已识别时，结论必须原样摘录正文。
         # 边界无法自动识别时，退回整份报告做人工确认。
@@ -472,6 +513,8 @@ def score_review(
             partial_claims += 1
         elif verdict == "uncertain":
             uncertain_claims += 1
+        elif verdict == "unsupported":
+            unsupported_claims += 1
 
     audited_claims = len(claims)
 
@@ -487,6 +530,8 @@ def score_review(
         "supported_claims": supported_claims,
         "partial_claims": partial_claims,
         "uncertain_claims": uncertain_claims,
+        "unsupported_claims": unsupported_claims,
+        "uncited_claims": audited_claims - cited_claims,
         "citation_coverage": (
             cited_claims / audited_claims
             if audited_claims
@@ -498,6 +543,7 @@ def score_review(
             else None
         ),
         "claim_inventory_complete": inventory_complete,
+        "review_scope": "complete" if inventory_complete else "sampled",
         "evidence_sufficiency": evidence_sufficiency,
         "limitations_score": limitations_score,
     }
