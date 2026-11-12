@@ -32,6 +32,15 @@ class TodoItem:
     note_id: str | None = None
     note_path: str | None = None
 
+    # query 保留规划原文；search_query 保存搜索前确定的实际查询。
+    # None 表示尚未确定，旧检查点缺少此字段时也使用这个默认值。
+    search_query: str | None = None
+
+    @property
+    def effective_query(self) -> str:
+        """派生属性不进入 asdict/检查点，避免保存第三份查询状态。"""
+        return self.search_query if self.search_query is not None else self.query
+
 #证据引用类
 @dataclass(kw_only=True, frozen=True)
 class Source:

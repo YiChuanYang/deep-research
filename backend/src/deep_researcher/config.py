@@ -29,6 +29,7 @@ SNAPSHOT_FIELDS = {
     "search_api",
     "search_timeout",
     "search_max_results",
+    "enable_query_rewrite",
     "fetch_full_page",
     "max_tokens_per_source",
     "enable_notes",
@@ -71,6 +72,8 @@ class Configuration(BaseModel):
     search_api: SearchAPI = SearchAPI.TAVILY
     search_timeout: int = Field(default=30, gt=0, le=120)
     search_max_results: int = Field(default=5, ge=1, le=20)
+    # 仅控制搜索前的查询改写，搜索次数和结果数仍由原逻辑决定。
+    enable_query_rewrite: bool = True
     tavily_api_key: SecretStr | None = Field(default=None, repr=False)
 
     fetch_full_page: bool = False
@@ -184,9 +187,13 @@ class Configuration(BaseModel):
                 "研究快照包含未知配置字段，请先迁移快照"
             )
 
+        # 旧研究没有记录这个选项，应沿用当时不改写的行为。
+        # 新研究在 snapshot() 中保存开关，恢复时不受当前环境开关影响。
+        saved = dict(snapshot)
+        saved.setdefault("enable_query_rewrite", False)
         restored = type(self).model_validate({
             **self.model_dump(),
-            **snapshot,
+            **saved,
         })
 
         current_endpoint = (

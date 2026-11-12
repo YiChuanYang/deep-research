@@ -37,6 +37,7 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "deep_researcher.task": ("📋", "research.task"),
     "services.planner": ("🧭", "services.planner"),
     "services.search": ("🔎", "services.search"),
+    "services.query_rewriter": ("🔧", "services.query"),
     "services.summarizer": ("🧠", "services.summarizer"),
     "services.reporter": ("📝", "services.reporter"),
     "services.note_service": ("📒", "services.note"),

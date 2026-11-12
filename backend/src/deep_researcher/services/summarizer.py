@@ -58,7 +58,7 @@ class SummarizationService:
             research_topic=state.research_topic,
             title=task.title,
             intent=task.intent,
-            query=task.query,
+            query=task.effective_query,
             context=context,
         )
 

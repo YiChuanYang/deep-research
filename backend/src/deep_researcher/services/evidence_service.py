@@ -76,12 +76,16 @@ class EvidenceService:
         backend: str,
         max_chars: int,
         prefer_full_page: bool,
+        query: str | None = None,
     ) -> EvidenceBatch:
         """整理证据，返回新目录，不修改传入的研究状态。"""
         if max_chars <= 0:
             raise ValueError("max_chars 必须为正数")
 
         task = state.get_task(task_id)
+        # 记录实际发送给搜索引擎的查询，而不是仍沿用规划阶段的草案。
+        # 可选参数兼容原有直接调用，未来多查询也可逐次传入实际值。
+        actual_query = task.effective_query if query is None else query
 
         # 复制字典容器；后面只向这些新字典添加条目。
         sources = dict(state.sources)
@@ -150,7 +154,7 @@ class EvidenceService:
                     and item.text == text
                     and item.kind == kind
                     and item.truncated == truncated
-                    and item.query == task.query
+                    and item.query == actual_query
                     and item.backend == backend
                 ),
                 None,
@@ -167,7 +171,7 @@ class EvidenceService:
                     retrieved_at=datetime.now(
                         timezone.utc
                     ).isoformat(timespec="seconds"),
-                    query=task.query,
+                    query=actual_query,
                     backend=backend,
                     kind=kind,
                     truncated=truncated,

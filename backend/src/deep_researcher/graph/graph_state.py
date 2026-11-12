@@ -64,6 +64,10 @@ def decode_state(payload:dict[str,Any])->SummaryState:
             raise ValueError("证据关联不完整")
 
     for task in state.todo_items:
+        if task.search_query is not None and (
+            not isinstance(task.search_query, str) or not task.search_query.strip()
+        ):
+            raise ValueError("已保存的搜索查询必须是非空字符串")
         if any(
             key not in state.evidence
             or state.evidence[key].task_id != task.id

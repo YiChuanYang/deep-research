@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
-from langgraph.config import get_stream_writer
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from uuid import uuid4
 
-from langgraph.config import get_stream_writer
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
 from deep_researcher.config import Configuration
@@ -30,12 +28,14 @@ from deep_researcher.logging_config import (
 )
 from deep_researcher.models import SummaryState
 from deep_researcher.prompts import (
+    query_rewriter_system_prompt,
     reporter_system_prompt,
     summarizer_system_prompt,
     todo_planner_system_prompt,
 )
 from deep_researcher.services.note_service import NoteService
 from deep_researcher.services.planner import PlanningService
+from deep_researcher.services.query_rewriter import QueryRewriteService
 from deep_researcher.services.reporter import ReportingService
 from deep_researcher.services.search import SearchService
 from deep_researcher.services.summarizer import SummarizationService
@@ -63,6 +63,15 @@ class ResearchNodes:
             self._llm = MyLLM(config=self.config)
 
         return self._llm
+
+    def query_agent(self) -> SimpleAgent:
+        return SimpleAgent(
+            name="Agent_for_query_rewriter",
+            llm=self.llm(),
+            config=self.config,
+            sys_prompt=query_rewriter_system_prompt,
+            enable_tool_call=False,
+        )
 
     def summary_agent(self) -> SimpleAgent:
         return SimpleAgent(
@@ -101,6 +110,7 @@ class ResearchNodes:
             )
 
             task_nodes = {
+                "rewrite_query",
                 "search",
                 "summarize",
                 "save_note",
@@ -115,6 +125,7 @@ class ResearchNodes:
             stages = {
                 "plan": "plan",
                 "select_task": "tasks",
+                "rewrite_query": "tasks",
                 "search": "tasks",
                 "summarize": "tasks",
                 "save_note": "tasks",
@@ -248,6 +259,20 @@ class ResearchNodes:
             raise ValueError("当前没有选中的任务")
 
         return task_id
+
+    def rewrite_query(
+        self,
+        state: SummaryState,
+        graph_state: ResearchGraphState,
+    ) -> dict[str, Any]:
+        task_id = self.task_id(graph_state)
+        task = state.get_task(task_id)
+        task.search_query = QueryRewriteService(
+            self.query_agent, self.config,
+        ).rewrite_task(state, task_id)
+        # bind 会把结果写进 payload；sync 检查点完成后才进入搜索。
+        # 搜索失败后从 search 恢复，复用这里已经确定的查询。
+        return {}
 
     def search(
         self,
@@ -445,6 +470,7 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
     actions:dict[str,Action]={
         "plan":nodes.plan,
         "select_task":nodes.select_task,
+        "rewrite_query":nodes.rewrite_query,
         "search":nodes.search,
         "summarize":nodes.summarize,
         "save_note":nodes.save_note,
@@ -461,7 +487,7 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
     def after_selected(graph_state:ResearchGraphState)->str:
         """select_task 后的路由函数"""
         return (
-            "search" 
+            "rewrite_query"
             if graph_state["active_task_id"] is not None
             else "report")
 
@@ -494,10 +520,11 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
         "select_task",
         after_selected,
         {
-            "search":"search",
+            "rewrite_query":"rewrite_query",
             "report":"report",
         }
     )
+    builder.add_edge("rewrite_query", "search")
     builder.add_conditional_edges(
         "search",
         after_searched,
@@ -519,17 +546,3 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
     builder.add_edge("save_report",END)
 
     return builder.compile(checkpointer=checkpointer)
-
-
-
-
-
-
-
-        
-
-
-
-
-                      
-                 

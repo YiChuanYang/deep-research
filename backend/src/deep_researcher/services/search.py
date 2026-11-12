@@ -48,20 +48,22 @@ class SearchService:
         started_at = perf_counter()
         task = state.get_task(task_id)
         backend = self._search_tool.backend
+        query = task.effective_query.strip()
 
         logger.info(
             "正在检索 · backend=%s · query=%s",
             backend,
-            task.query,
+            query,
             extra={
                 "event": "search_started",
                 "backend": backend,
-                "query": task.query,
+                "query": query,
+                "original_query": task.query,
             },
         )
 
         payload = self._search_tool.run({
-            "input": task.query,
+            "input": query,
             "max_results": self._config.search_max_results,
         })
 
@@ -72,6 +74,7 @@ class SearchService:
             backend=backend,
             max_chars=self._config.evidence_max_chars,
             prefer_full_page=self._config.fetch_full_page,
+            query=query,
         )
 
         batch.notices = list(payload.get("notices") or [])
