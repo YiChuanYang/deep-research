@@ -40,6 +40,7 @@ async function request<T>(path: string, init: RequestInit = {}, signal?: AbortSi
       try { body = await response.json() as ErrorBody; } catch { /* Proxy errors may contain HTML. */ }
       throw new ApiError(response.status, body.error?.code ?? 'http_error', body.error?.message ?? `请求失败（HTTP ${response.status}）`, body.error?.run_id, body.error?.error_id);
     }
+    if (response.status === 204) return undefined as T;
     return (blob ? await response.blob() : await response.json()) as T;
   } catch (error) {
     if (signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
@@ -57,6 +58,7 @@ export const listRuns = (offset: number, signal?: AbortSignal) => request<RunLis
 export const getProgress = (id: string, signal?: AbortSignal) => request<RunProgress>(runPath(id), {}, signal);
 export const getResult = (id: string, signal?: AbortSignal) => request<ResearchResult>(`${runPath(id)}/result`, {}, signal);
 export const getReport = (id: string) => request<Blob>(`${runPath(id)}/report`, {}, undefined, true);
+export const deleteResearch = (id: string): Promise<void> => request<void>(runPath(id), { method: 'DELETE' });
 
 export async function createResearch(topic: string, maxTasks: number): Promise<Accepted> {
   const result = await request<Accepted>('/research', { method: 'POST', body: JSON.stringify({ topic, max_tasks: maxTasks }) });

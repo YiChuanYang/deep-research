@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from contextlib import closing
 from time import perf_counter
 
 from deep_researcher.agents.simple_agent import SimpleAgent
@@ -11,7 +12,6 @@ from deep_researcher.logging_config import log_operation
 from deep_researcher.models import CitedText, SummaryState
 from deep_researcher.prompts import report_writer_instructions
 from deep_researcher.services.evidence_service import EvidenceService
-
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,9 @@ class ReportingService:
     def generate_report(
         self,
         state: SummaryState,
+        *,
+        on_text: Callable[[str], None] | None = None,
+        on_validating: Callable[[], None] | None = None,
     ) -> CitedText:
         started_at = perf_counter()
 
@@ -102,8 +105,28 @@ class ReportingService:
         agent.enable_tool_call = False
 
         try:
-            response = agent.run(input_text=prompt)
+            if on_text is None:
+                # 兼容原来的 demo_reporter 和非流式调用。
+                response = agent.run(
+                    input_text=prompt
+                )
+            else:
+                # 使用列表收集分片，
+                # 最后再拼成完整正文进行引用校验。
+                parts: list[str] = []
+
+                # closing 确保回调抛错时也关闭生成器，释放模型 HTTP 连接。
+                with closing(agent.stream(input_text=prompt)) as chunks:
+                    for text in chunks:
+                        parts.append(text)
+                        # 回调通知外层，不改变正文，也不直接写业务状态。
+                        on_text(text)
+
+                response = "".join(parts)
+
         finally:
+            # 无论模型成功、失败还是被关闭，
+            # 都清理 Agent 的本轮历史。
             agent.clear_history()
 
         if (
@@ -111,6 +134,9 @@ class ReportingService:
             or not response.strip()
         ):
             raise ValueError("报告正文为空")
+
+        if on_validating is not None:
+            on_validating()
 
         body = response.strip()
 

@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+from deep_researcher.api.errors import ApiError
+from deep_researcher.api.streaming import research_events
 
 from deep_researcher.api.manager import ResearchManager
 from deep_researcher.api.schemas import (
@@ -281,3 +283,30 @@ def delete_research(
       _manager(request).delete(run_id)
 
       return Response(status_code=204)
+
+@router.get("/research/{run_id}/events")
+def subscribe_research(
+    run_id: RunId,
+    request: Request,
+    after: Annotated[int, Query(ge=0, le=9223372036854775807)] = 0,
+) -> StreamingResponse:
+    """Last-Event-ID 用于自动重连，after 用于页面主动重新建立连接。"""
+    manager = _manager(request)
+    # 在发送 200 响应头之前检查存在性，使不存在的研究正常返回 404。
+    manager.get_snapshot(run_id)
+    raw_cursor = request.headers.get("last-event-id")
+    try:
+        cursor = int(raw_cursor) if raw_cursor is not None else after
+        if not 0 <= cursor <= 9223372036854775807:
+            raise ValueError("invalid cursor")
+    except ValueError as exc:
+        raise ApiError(422, "invalid_event_id", "事件编号不合法") from exc
+
+    return StreamingResponse(
+        research_events(request, manager, run_id, cursor),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -8,7 +8,9 @@ import logging
 import json
 from openai.types.chat import ChatCompletionMessageFunctionToolCall
 from deep_researcher.logging_config import log_exception_once, log_operation
+from contextlib import closing
 
+from collections.abc import Generator
 logger = logging.getLogger(__name__)
 
 
@@ -219,3 +221,72 @@ class SimpleAgent(Agent):
             max_tool_iterations,
             )
         raise RuntimeError("工具调用迭代已达到上限，未获得最终答复")
+
+
+    def stream(
+        self,
+        input_text: str,
+        **kwargs: Any,
+    ) -> Generator[str, None, None]:
+        """
+        以纯文本方式流式运行 Agent。
+
+        这个入口只支持 enable_tool_call=False。
+        Planner 和 ToolAwareAgent 继续使用原来的 run()。
+        """
+        if not input_text.strip():
+            raise ValueError(
+                "输入文本必须是非空字符串"
+            )
+
+        if self.enable_tool_call:
+            raise ValueError(
+                "当前 Agent 开启了工具调用，"
+                "不能使用纯文本流式入口"
+            )
+
+        # 记录本轮开始前的历史长度。
+        # 如果流式中途失败，就删除本轮未完成消息。
+        history_size = len(self._history)
+
+        parts: list[str] = []
+        committed = False
+
+        self.add_message(
+            Message(
+                role="user",
+                content=input_text,
+            )
+        )
+
+        try:
+            # closing() 在离开 with 时调用生成器 close()。
+            # 消费者关闭生成器时释放底层 HTTP 流；关闭网页不取消后台研究。
+            with closing(
+                self.llm.stream_text(
+                    self._build_messages(),
+                    **kwargs,
+                )
+            ) as chunks:
+                for text in chunks:
+                    parts.append(text)
+
+                    # 先把分片交给 Reporter，
+                    # Reporter 调用节点提供的回调，由节点转成 report.delta 事件。
+                    yield text
+
+            complete_text = "".join(parts)
+
+            self.add_message(
+                Message(
+                    role="assistant",
+                    content=complete_text,
+                )
+            )
+
+            committed = True
+
+        finally:
+            if not committed:
+                # 半份回答不能污染 Agent 对话历史。
+                del self._history[history_size:]

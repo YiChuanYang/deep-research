@@ -5,11 +5,16 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from typing import Any
+from time import perf_counter
+from uuid import uuid4
 
+from langgraph.config import get_stream_writer
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from uuid import uuid4
 
+from langgraph.config import get_stream_writer
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
 from deep_researcher.config import Configuration
@@ -136,12 +141,19 @@ class ResearchNodes:
                     },
                 )
 
+                # writer 是 LangGraph 运行上下文中的过程消息发送函数。
+                # 它不会写入 SummaryState，也不会自动保存到检查点。
+                writer = get_stream_writer()
+                event_data = {"node": name, "task_id": task_id}
+                writer({"type": "node.started", "data": event_data})
+
                 try:
                     updates = action(
                         state,
                         graph_state,
                     )
                 except Exception as exc:
+                    writer({"type": "node.failed", "data": event_data})
                     log_exception_once(
                         logger,
                         "节点失败 · %s",
@@ -160,6 +172,9 @@ class ResearchNodes:
                         "event": "graph_node_returned",
                     },
                 )
+
+                # returned 表示函数已返回；持久化是否完成仍以检查点为准。
+                writer({"type": "node.returned", "data": event_data})
 
                 # ** 解包合并字典。
                 # 返回更新后，LangGraph 才接收节点的新状态。
@@ -320,9 +335,53 @@ class ResearchNodes:
         state: SummaryState,
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
-        result = ReportingService(
-            self.reporter_agent
-        ).generate_report(state)
+        writer = get_stream_writer()
+        # 每次重新生成有独立编号，前端据此清空旧草稿。
+        generation_id = uuid4().hex
+        pending: list[str] = []
+        pending_chars = 0
+        last_flush = perf_counter()
+
+        def emit(event_type: str, **data: Any) -> None:
+            writer({
+                "type": event_type,
+                "data": {"generation_id": generation_id, **data},
+            })
+
+        def flush() -> None:
+            nonlocal pending_chars, last_flush
+            # nonlocal 允许修改外层函数的变量，而不是创建同名局部变量。
+            if pending:
+                emit("report.delta", text="".join(pending))
+                pending.clear()
+                pending_chars = 0
+                last_flush = perf_counter()
+
+        def on_text(text: str) -> None:
+            nonlocal pending_chars
+            pending.append(text)
+            pending_chars += len(text)
+            # 合并小分片，避免每个 token 都进行一次 SQLite 事务。
+            # 时间阈值在收到分片时检查；结束/失败时会强制发出余下内容。
+            if pending_chars >= 512 or perf_counter() - last_flush >= 0.08:
+                flush()
+
+        def on_validating() -> None:
+            flush()
+            emit("report.validating")
+
+        emit("report.started")
+        try:
+            result = ReportingService(self.reporter_agent).generate_report(
+                state,
+                on_text=on_text,
+                on_validating=on_validating,
+            )
+        finally:
+            flush()
+
+        emit("report.generated", chars=len(result.text))
+        # generated 仅表示报告服务返回；正式可交付仍以 report_ready 为准。
         report = result.text
 
         unfinished = [

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
 import type { Citation } from '../types';
@@ -8,6 +8,7 @@ import { safeUrl } from '../display';
 const props = defineProps<{ markdown: string; citations: Citation[] }>();
 const emit = defineEmits<{ select: [id: string] }>();
 const parser = new MarkdownIt({ html: false, linkify: false, breaks: false });
+const article = ref<HTMLElement | null>(null);
 
 const rendered = computed(() => {
   const html = DOMPurify.sanitize(parser.render(props.markdown), {
@@ -45,8 +46,19 @@ const rendered = computed(() => {
     }
     if (changed) { fragment.append(doc.createTextNode(text.slice(cursor))); node.replaceWith(fragment); }
   }
-  return doc.body.innerHTML;
+  const headings = Array.from(doc.querySelectorAll('h2, h3')).map((heading, index) => {
+    const id = `report-section-${index}`;
+    heading.id = id;
+    heading.setAttribute('tabindex', '-1');
+    return { id, text: heading.textContent ?? '', level: heading.tagName === 'H2' ? 2 : 3 };
+  });
+  return { html: doc.body.innerHTML, headings };
 });
+function jump(id: string): void {
+  const heading = article.value?.querySelector<HTMLElement>(`#${id}`);
+  heading?.focus({ preventScroll: true });
+  heading?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+}
 function click(event: MouseEvent): void {
   if (!(event.target instanceof Element)) return;
   const id = event.target.closest<HTMLButtonElement>('button[data-evidence-id]')?.dataset.evidenceId;
@@ -54,4 +66,12 @@ function click(event: MouseEvent): void {
 }
 </script>
 
-<template><article class="prose" @click="click"><div v-html="rendered"></div></article></template>
+<template>
+  <div class="report-layout">
+    <details v-if="rendered.headings.length" class="report-outline" open>
+      <summary>目录</summary>
+      <nav aria-label="报告目录"><button v-for="heading in rendered.headings" :key="heading.id" :class="{ nested: heading.level === 3 }" @click="jump(heading.id)">{{ heading.text }}</button></nav>
+    </details>
+    <article ref="article" class="prose" @click="click"><div v-html="rendered.html"></div></article>
+  </div>
+</template>

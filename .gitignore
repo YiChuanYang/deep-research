@@ -12,7 +12,10 @@ dist/
 .env.local
 *.log
 workspace/
-
+demo/
+notes/
+logs/
+data/
 # ========== 前端 Node 相关 ==========
 node_modules/
 dist/
@@ -30,3 +33,6 @@ pnpm-debug.log*
 *.swp
 .DS_Store
 Thumbs.db
+/IMPLEMENTATION_ROADMAP.md
+# 本地运行日志及轮转文件
+logs/

@@ -13,6 +13,7 @@ from typing import Literal
 from filelock import Timeout as FileLockTimeout
 
 from deep_researcher.api.errors import ApiError
+from deep_researcher.events import EventStore
 from deep_researcher.config import Configuration, get_config
 from deep_researcher.graph.graph_researcher import (
     DEFAULT_GRAPH_DIR,
@@ -54,6 +55,7 @@ class ResearchManager:
             config if config is not None else get_config()
         )
         self._data_dir = data_dir
+        self.events = EventStore(data_dir.resolve() / "events.sqlite3")
         self._factory = researcher_factory
         self._capacity = max_inflight
 

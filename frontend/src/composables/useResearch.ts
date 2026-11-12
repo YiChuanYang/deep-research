@@ -1,14 +1,16 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { ApiError, errorText, getProgress, getResult } from '../api';
 import type { ResearchResult, RunProgress } from '../types';
+import { useResearchStream } from './useResearchStream';
 
-/** Only reads snapshots. Writes are deliberate user actions and never auto-retried. */
+/** 快照负责正式状态；SSE 负责过程展示；写操作始终由用户主动发起。 */
 export function useResearch(runId: string) {
   const progress = ref<RunProgress | null>(null);
   const result = ref<ResearchResult | null>(null);
   const loading = ref(false);
   const error = ref('');
   const notFound = ref(false);
+  const lastUpdated = ref<number | null>(null);
   let disposed = false;
   let timer: number | undefined;
   let controller: AbortController | undefined;
@@ -28,14 +30,20 @@ export function useResearch(runId: string) {
       const value = await getProgress(runId, current.signal);
       if (disposed || current.signal.aborted) return;
       progress.value = value;
+      lastUpdated.value = Date.now();
       error.value = '';
       notFound.value = false;
-      if (value.report_ready && !result.value) result.value = await getResult(runId, current.signal);
+      if (value.report_ready && !result.value) {
+        const report = await getResult(runId, current.signal);
+        if (disposed || current.signal.aborted) return;
+        result.value = report;
+      }
       again = !value.report_ready && (value.execution !== 'idle' || (value.status === 'running' && !value.requires_recovery_confirmation));
     } catch (caught) {
       if (disposed || current.signal.aborted) return;
       error.value = errorText(caught);
       notFound.value = caught instanceof ApiError && [404, 422].includes(caught.status);
+      if (notFound.value) { progress.value = null; result.value = null; }
       again = !notFound.value && (!(caught instanceof ApiError) || caught.status === 0 || caught.status >= 500 || caught.code === 'result_not_ready');
       delay = 5000;
     } finally {
@@ -45,11 +53,13 @@ export function useResearch(runId: string) {
       }
     }
   }
+  const stream = useResearchStream(runId, progress, refresh);
+
   function visibility(): void {
     if (document.hidden) { clearTimer(); controller?.abort(); loading.value = false; }
     else void refresh();
   }
   onMounted(() => { document.addEventListener('visibilitychange', visibility); void refresh(); });
   onBeforeUnmount(() => { disposed = true; clearTimer(); controller?.abort(); document.removeEventListener('visibilitychange', visibility); });
-  return { progress, result, loading, error, notFound, refresh };
+  return { progress, result, loading, error, notFound, lastUpdated, refresh, ...stream };
 }

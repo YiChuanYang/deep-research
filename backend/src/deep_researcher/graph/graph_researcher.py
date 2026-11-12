@@ -15,6 +15,7 @@ from deep_researcher.tools.note_tool import NoteTool
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from deep_researcher.config import Configuration, get_config
+from deep_researcher.events import EventStore
 from deep_researcher.graph.graph_nodes import (
     ResearchNodes,
     build_graph,
@@ -93,6 +94,7 @@ class GraphDeepResearcher:
             exist_ok=True,
         )
 
+        self._events = EventStore(self._directory / "events.sqlite3")
         self._nodes_factory = nodes_factory
         self._last_run_id: str | None = None
 
@@ -322,14 +324,45 @@ class GraphDeepResearcher:
                         },
                     )
 
+                    # 事件展示故障不破坏研究结果；禁用本次事件写入并只记一次日志。
+                    # 前端仍可通过状态查询取得最终结果。
+                    events_available = True
                     try:
-                        # 已有检查点时传 None：
-                        # 继续原执行，不重新输入主题。
-                        graph.invoke(
+                        self._events.initialize()
+                    except Exception as event_error:
+                        events_available = False
+                        logger.warning("事件存储不可用 · 继续研究 · %s", type(event_error).__name__)
+
+                    def emit(event_type: str, data: dict[str, Any]) -> None:
+                        nonlocal events_available
+                        if not events_available:
+                            return
+                        try:
+                            self._events.append(
+                                run_id=run_id,
+                                execution_id=execution_id,
+                                event_type=event_type,
+                                data=data,
+                            )
+                        except Exception as event_error:
+                            events_available = False
+                            logger.warning(
+                                "事件写入中断 · 已降级为进度查询 · %s",
+                                type(event_error).__name__,
+                            )
+
+                    try:
+                        emit("research.started", {"resuming": exists})
+                        # stream 返回迭代器；消费时执行图并接收节点发出的字典。
+                        # 恢复时仍传 None，检查点、锁和异常处理保持原有职责。
+                        for event in graph.stream(
                             initial,
                             run_config,
+                            stream_mode="custom",
+                            version="v1",
                             durability="sync",
-                        )
+                        ):
+                            emit(event["type"], event["data"])
 
                         final = graph.get_state(
                             run_config
@@ -353,6 +386,8 @@ class GraphDeepResearcher:
                             run_id,
                             "completed",
                         )
+
+                        emit("research.completed", {})
 
                         logger.info(
                             "研究完成",
@@ -395,6 +430,7 @@ class GraphDeepResearcher:
                                     "related_error_id": error_id,
                                 },
                             )
+                        emit("research.failed", {"error_id": error_id})
                         logger.warning(
                             "研究执行中止 · run_id=%s",
                             run_id,
@@ -494,6 +530,8 @@ class GraphDeepResearcher:
                   workspace,
                   run_id,
               )
+
+              self._events.delete_run(run_id)
 
               # 最后删除元数据；失败重试还需要其中的配置。
               repository.purge_deleted(run_id)
