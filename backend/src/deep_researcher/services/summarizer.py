@@ -92,19 +92,18 @@ class SummarizationService:
         if not summary:
             raise ValueError("总结结果为空")
 
-        normalized = summary.strip("「」“”\"'。.!！")
+        # 固定的资料不足响应仍然允许没有引用。
+        empty_marker = summary.strip("「」“”\"'。.!！")
 
-        if normalized == "暂无可用信息":
+        if empty_marker == "暂无可用信息":
             result = CitedText(text="暂无可用信息")
         else:
-            ids = evidence_service.validate(
+            # 返回值同时携带规范后的正文和合法编号；由图节点统一写入状态。
+            result = evidence_service.prepare_text(
                 state,
                 summary,
                 task.evidence_ids,
-            )
-            result = CitedText(
-                text=summary,
-                citation_ids=tuple(ids),
+                document="summary",
             )
 
         logger.info(

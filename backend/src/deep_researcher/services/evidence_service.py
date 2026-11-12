@@ -12,7 +12,13 @@ from typing import Any, Literal
 from urllib.parse import quote, urldefrag, urlsplit
 
 from deep_researcher.logging_config import log_operation
-from deep_researcher.models import Evidence, Source, SummaryState,EvidenceBatch
+from deep_researcher.models import (
+    CitedText,
+    Evidence,
+    EvidenceBatch,
+    Source,
+    SummaryState,
+)
 
 
 
@@ -21,6 +27,14 @@ logger = logging.getLogger(__name__)
 # 捕获约定的 [E编号]，再进一步检查格式和范围。
 CITATION = re.compile(r"\[(E[^\]\r\n]*)\]")
 ID_PATTERN = re.compile(r"E\d{4,}")
+
+# 只处理完整编号的逗号合写，例如 E0001, E0002 或 E0001，E0002。
+# [0-9]{4,} 表示至少四位数字；[ \t]* 允许空格和制表符，但不跨行。
+# (?:...) 将规则分组，末尾 + 要求至少再出现一个编号。
+# 不展开范围、不补 E 或前导零、不猜测编号。
+GROUPED_CITATION = re.compile(
+    r"E[0-9]{4,}(?:[ \t]*[,，][ \t]*E[0-9]{4,})+"
+)
 
 
 class CitationError(ValueError):
@@ -238,6 +252,88 @@ class EvidenceService:
             ensure_ascii=False,
             indent=2,
         )
+
+    def prepare_text(
+        self,
+        state: SummaryState,
+        text: str,
+        allowed_ids: Iterable[str],
+        *,
+        document: Literal["summary", "report"] = "summary",
+    ) -> CitedText:
+        """规范化明确的引用合写，严格校验后返回正文与编号。"""
+        # * 后面的 document 必须以关键字传入。
+        # 沿用当前 [E编号] 引用协议，此方法不做通用 Markdown 解析。
+        if not isinstance(text, str) or not text.strip():
+            raise CitationError("待处理正文必须是非空字符串")
+
+        # Iterable 也可能是只能遍历一次的生成器，先固定本次允许范围。
+        allowed = tuple(allowed_ids)
+        changes: list[dict[str, Any]] = []
+
+        def replace_group(match: re.Match[str]) -> str:
+            """为正则匹配到的一处引用生成候选替换文本。"""
+            # Match 是匹配结果：group(0) 包含方括号，group(1) 是括号内文字。
+            inner = match.group(1)
+            # fullmatch 要求整个内容符合规则；不匹配时返回 None。
+            if GROUPED_CITATION.fullmatch(inner) is None:
+                return match.group(0)
+
+            # split 返回字符串列表，只分隔逗号，不改动编号或顺序。
+            ids = [item.strip() for item in re.split(r"[,，]", inner)]
+            replacement = "".join(f"[{item}]" for item in ids)
+            changes.append({
+                # 位置基于输入正文，end 是匹配结束后的下一个字符位置。
+                "start": match.start(),
+                "end": match.end(),
+                "before": match.group(0),
+                "after": replacement,
+            })
+            return replacement
+
+        # sub 接收回调，每个匹配调用一次；返回新字符串，不修改原 text。
+        # 这里只生成候选文本，未知编号仍会在下面的严格校验中被拒绝。
+        normalized = CITATION.sub(replace_group, text)
+        try:
+            ids = self.validate(state, normalized, allowed)
+        except CitationError:
+            if changes:
+                logger.warning(
+                    "引用规范化未通过校验 · 文档=%s · 候选修复=%d 处",
+                    document,
+                    len(changes),
+                    extra={
+                        "event": "citation_normalization_rejected",
+                        "document": document,
+                        "original_text": text,
+                        "candidate_text": normalized,
+                        "citation_changes": changes,
+                    },
+                )
+            # 保留原始异常链；校验失败不返回部分结果，不提交业务状态。
+            raise
+
+        if changes:
+            logger.info(
+                "引用格式已规范化 · 文档=%s · 修复=%d 处",
+                document,
+                len(changes),
+                extra={
+                    "event": "citations_normalized",
+                    "document": document,
+                    "repair_count": len(changes),
+                    "original_text": text,
+                    "normalized_text": normalized,
+                    "citation_changes": changes,
+                    "citation_ids": ids,
+                },
+            )
+            # 控制台显示简短正文，JsonFormatter 保存 extra 中的审计字段。
+            # original_text 是进入本方法的正文，可能已经去除首尾空白和思考标签，
+            # 不是供应商原始响应。审计信息保存在日志，不增加业务状态字段。
+
+        # 一起返回处理后的正文和编号，避免校验了新文本却仍保存旧文本。
+        return CitedText(text=normalized, citation_ids=tuple(ids))
 
     def validate(
         self,

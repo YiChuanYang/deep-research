@@ -138,13 +138,16 @@ class ReportingService:
         if on_validating is not None:
             on_validating()
 
-        body = response.strip()
-
-        citation_ids = evidence_service.validate(
+        # 等流式分片拼成完整正文后再处理：一个引用可能跨越多个分片。
+        # 草稿保留模型原文，最终结果接口交付规范化并校验通过的正式报告。
+        prepared = evidence_service.prepare_text(
             state,
-            body,
+            response.strip(),
             allowed,
+            document="report",
         )
+        body = prepared.text
+        citation_ids = prepared.citation_ids
 
         references = evidence_service.references(
             state,
