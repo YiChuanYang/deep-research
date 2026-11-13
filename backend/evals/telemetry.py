@@ -23,6 +23,9 @@ class RunTelemetry(logging.Handler):
         self.model_responses = 0
         self.search_requests = 0
         self.search_responses = 0
+        self.extraction_requests = 0
+        self.extraction_responses = 0
+        self.extraction_pages = 0
         self.usage_responses = 0
         self.reported_tokens = 0
         self.report_ttft_s: list[float] = []
@@ -47,6 +50,11 @@ class RunTelemetry(logging.Handler):
                 self.search_requests += 1
             elif event == "search_completed":
                 self.search_responses += 1
+            elif event == "page_extract_started":
+                self.extraction_requests += 1
+                self.extraction_pages += getattr(record, "page_count", 0)
+            elif event == "page_extract_completed":
+                self.extraction_responses += 1
 
     def snapshot(self) -> dict[str, Any]:
         with self._guard:
@@ -58,6 +66,9 @@ class RunTelemetry(logging.Handler):
                 "model_responses": self.model_responses,
                 "search_requests": self.search_requests,
                 "search_responses": self.search_responses,
+                "extraction_requests": self.extraction_requests,
+                "extraction_responses": self.extraction_responses,
+                "extraction_pages": self.extraction_pages,
                 "usage_responses": self.usage_responses,
                 "usage_complete": complete,
                 "reported_tokens": self.reported_tokens,

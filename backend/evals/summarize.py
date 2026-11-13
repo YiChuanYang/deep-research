@@ -189,6 +189,7 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "research_duration_s_finished": stats([row["research_duration_s"] for row in finished]),
     }
     for key in ["model_requests", "model_responses", "search_requests", "search_responses",
+                "extraction_requests", "extraction_responses", "extraction_pages",
                 "reported_tokens", "total_tokens", "report_ttft_s"]:
         efficiency[key] = stats([(row.get("telemetry") or {}).get(key) for row in completed])
     efficiency["token_usage_complete"] = ratio(

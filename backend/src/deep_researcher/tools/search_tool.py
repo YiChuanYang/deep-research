@@ -167,7 +167,9 @@ class SearchTool(Tool):
                 ),
                 max_results=max_results,
                 include_answer=False,
-                include_raw_content=fetch_full_page,
+                # 新流程按筛选结果再 extract，避免为全部候选页面预先提取正文。
+                # fetch_full_page 对 search_depth 的原有选择保持兼容。
+                include_raw_content=fetch_full_page and not self._config.enable_evidence_selection,
                 timeout=self.timeout,
             )
 
@@ -177,6 +179,28 @@ class SearchTool(Tool):
             raise RuntimeError(
                 f"Tavily 搜索失败：{exc}"
             ) from exc
+
+    def extract_pages(self, urls: list[str]) -> dict[str, Any]:
+        """批量补取已选页面；返回成功/失败列表，不自行抓取任意网址。"""
+        if not urls:
+            return {"results": [], "failed_results": []}
+        if self._tavily_client is None:
+            return {
+                "results": [],
+                "failed_results": [{"url": url, "error": "当前搜索后端不支持正文提取"} for url in urls],
+            }
+        logger.info("正在提取正文 · 页面=%d", len(urls), extra={
+            "event": "page_extract_started", "page_count": len(urls),
+        })
+        # extract 返回 dict，results 是成功页面，failed_results 是失败页面。
+        # query 不传入，取得页面文本后由本地切分，保留可核对的字符位置。
+        result = self._tavily_client.extract(
+            urls=urls, format="markdown", extract_depth="basic", timeout=self.timeout,
+        )
+        logger.info("正文提取返回 · 成功=%d · 失败=%d",
+                    len(result.get("results", [])), len(result.get("failed_results", [])),
+                    extra={"event": "page_extract_completed"})
+        return result
 
     # ===================== 统一标准化逻辑 =====================
     @staticmethod

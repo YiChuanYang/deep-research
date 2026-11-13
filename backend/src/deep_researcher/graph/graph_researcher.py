@@ -16,6 +16,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from deep_researcher.config import Configuration, get_config
 from deep_researcher.events import EventStore
+from deep_researcher.selection_audit import SelectionAuditStore
 from deep_researcher.graph.graph_nodes import (
     ResearchNodes,
     build_graph,
@@ -198,6 +199,7 @@ class GraphDeepResearcher:
                 config,
                 execution_id,
             )
+            nodes.selection_audits = SelectionAuditStore(self._directory / "selection_audits.sqlite3")
 
             try:
                 # from_conn_string 是上下文管理器。
@@ -532,6 +534,7 @@ class GraphDeepResearcher:
               )
 
               self._events.delete_run(run_id)
+              SelectionAuditStore(self._directory / "selection_audits.sqlite3").delete_run(run_id)
 
               # 最后删除元数据；失败重试还需要其中的配置。
               repository.purge_deleted(run_id)

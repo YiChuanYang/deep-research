@@ -16,6 +16,7 @@ from uuid import uuid4
 from deep_researcher.config import Configuration
 from deep_researcher.graph.graph_researcher import GraphDeepResearcher
 from deep_researcher.logging_config import log_context, log_exception_once, setup_logging
+from deep_researcher.selection_audit import SelectionAuditStore
 from evals.artifacts import export_attempt, read_json, write_json
 from evals.dataset import DEFAULT_DATASET, Split, load_dataset, select_cases
 from evals.telemetry import collect_telemetry
@@ -176,6 +177,10 @@ def run_suite(
             try:
                 assert snapshot is not None
                 export_attempt(snapshot, case, directory)
+                # 单独导出筛选过程，不改变正式报告/证据快照及原评分协议。
+                selection_audits = SelectionAuditStore(batch / "data" / "selection_audits.sqlite3").read_run(record["run_id"])
+                if selection_audits:
+                    write_json(directory / "selection_audits.json", selection_audits)
                 record["export_status"] = "completed"
             except (Exception, KeyboardInterrupt) as exc:
                 interrupted = isinstance(exc, KeyboardInterrupt)

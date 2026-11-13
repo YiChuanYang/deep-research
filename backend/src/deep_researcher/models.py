@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 
 # Literal 表示类型检查时允许的字符串集合。
@@ -126,6 +126,8 @@ class EvidenceBatch:
 
     evidence_ids: list[str]
     notices: list[str] = field(default_factory=list)
+    # 临时返回值，图节点把审计单独保存；不进入 SummaryState 检查点。
+    selection_audit: dict[str, Any] = field(default_factory=dict)
 
 
 
