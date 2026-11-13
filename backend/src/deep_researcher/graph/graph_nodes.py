@@ -27,10 +27,8 @@ from deep_researcher.logging_config import (
     log_exception_once,
 )
 from deep_researcher.models import SummaryState
-from deep_researcher.selection_audit import SelectionAuditStore
 from deep_researcher.prompts import (
     query_rewriter_system_prompt,
-    evidence_selector_system_prompt,
     reporter_system_prompt,
     summarizer_system_prompt,
     todo_planner_system_prompt,
@@ -58,7 +56,6 @@ class ResearchNodes:
         self.config = config
         self.execution_id = execution_id
         self._llm: MyLLM | None = None
-        self.selection_audits: SelectionAuditStore | None = None
 
     def llm(self) -> MyLLM:
         """首次需要模型时再创建客户端。"""
@@ -74,12 +71,6 @@ class ResearchNodes:
             config=self.config,
             sys_prompt=query_rewriter_system_prompt,
             enable_tool_call=False,
-        )
-
-    def evidence_selector_agent(self) -> SimpleAgent:
-        return SimpleAgent(
-            name="Agent_for_evidence_selector", llm=self.llm(), config=self.config,
-            sys_prompt=evidence_selector_system_prompt, enable_tool_call=False,
         )
 
     def summary_agent(self) -> SimpleAgent:
@@ -290,26 +281,12 @@ class ResearchNodes:
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
 
-        batch = SearchService(
-            self.config, selector_agent_factory=self.evidence_selector_agent,
-        ).search_task(
+        batch = SearchService(self.config).search_task(
             state,
             task_id,
         )
         task = state.get_task(task_id)
         #更新状态字段
-        if batch.selection_audit:
-            batch.selection_audit["execution_id"] = self.execution_id
-            if self.selection_audits is not None:
-                try:
-                    self.selection_audits.save(state.run_id, task_id, batch.selection_audit)
-                except Exception as exc:
-                    logger.warning("筛选审计保存失败 · %s", type(exc).__name__)
-                    batch.notices.append("筛选审计保存失败；已保留正式证据片段")
-            get_stream_writer()({
-                "type": "evidence.selected",
-                "data": {"task_id": task_id, "count": len(batch.evidence_ids)},
-            })
         state.sources = batch.sources
         state.evidence = batch.evidence
         task.evidence_ids = list(batch.evidence_ids)

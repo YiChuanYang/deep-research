@@ -77,7 +77,6 @@ class EvidenceService:
         max_chars: int,
         prefer_full_page: bool,
         query: str | None = None,
-        preselected: bool = False,
     ) -> EvidenceBatch:
         """整理证据，返回新目录，不修改传入的研究状态。"""
         if max_chars <= 0:
@@ -125,20 +124,9 @@ class EvidenceService:
             if not isinstance(raw, str) or not raw.strip():
                 continue
 
-            if preselected:
-                # 精确保留已选原文，不再 strip 或二次裁剪，保证审计位置一致。
-                raw = row.get("content")
-                if not isinstance(raw, str) or not raw.strip() or len(raw) > max_chars:
-                    raise ValueError("预选片段为空或超过长度预算")
-                if row.get("kind") not in {"search_snippet", "page_excerpt"}:
-                    raise ValueError("预选片段的材料类型无效")
-                kind = row["kind"]
-                text = raw
-                truncated = bool(row.get("truncated", False))
-            else:
-                raw = raw.strip()
-                text = raw[:max_chars]
-                truncated = len(raw) > max_chars
+            raw = raw.strip()
+            text = raw[:max_chars]
+            truncated = len(raw) > max_chars
 
             source = next(
                 (
@@ -180,11 +168,9 @@ class EvidenceService:
                     source_id=source.source_id,
                     task_id=task_id,
                     text=text,
-                    retrieved_at=(
-                        row["retrieved_at"]
-                        if preselected and isinstance(row.get("retrieved_at"), str)
-                        else datetime.now(timezone.utc).isoformat(timespec="seconds")
-                    ),
+                    retrieved_at=datetime.now(
+                        timezone.utc
+                    ).isoformat(timespec="seconds"),
                     query=actual_query,
                     backend=backend,
                     kind=kind,

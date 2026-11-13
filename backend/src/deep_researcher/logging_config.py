@@ -54,7 +54,6 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "graph.graph_researcher": ("🚀", "research.graph"),
     "graph.graph_nodes": ("🧭", "graph.nodes"),
     "services.evidence_service": ("🧾", "services.evidence"),
-    "services.evidence_selector": ("🧾", "services.selection"),
     "api.app": ("🌐", "api.app"),
     "api.manager": ("🧵", "api.manager"),
 }

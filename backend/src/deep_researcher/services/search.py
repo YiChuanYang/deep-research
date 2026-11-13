@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from time import perf_counter
-from typing import Any
 
-from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.config import Configuration
 from deep_researcher.logging_config import log_operation
 from deep_researcher.models import EvidenceBatch, SummaryState
 from deep_researcher.services.evidence_service import EvidenceService
-from deep_researcher.services.evidence_selector import EvidenceCandidate, EvidenceSelector
 from deep_researcher.tools.search_tool import SearchTool
 
 
@@ -27,10 +23,8 @@ class SearchService:
         config: Configuration,
         *,
         search_tool: SearchTool | None = None,
-        selector_agent_factory: Callable[[], SimpleAgent] | None = None,
     ) -> None:
         self._config = config
-        self._selector_agent_factory = selector_agent_factory
         self._search_tool = (
             search_tool
             if search_tool is not None
@@ -73,45 +67,17 @@ class SearchService:
             "max_results": self._config.search_max_results,
         })
 
-        selected_rows = payload["results"]
-        selection_notices: list[str] = []
-        audit: dict[str, Any] = {}
-        selected: list[EvidenceCandidate] = []
-        if self._config.enable_evidence_selection:
-            selected, audit, selection_notices = EvidenceSelector(
-                self._config, self._selector_agent_factory,
-            ).select(
-                state, task_id, payload["results"],
-                extract=getattr(self._search_tool, "extract_pages", None),
-            )
-            selected_rows = [item.result_row() for item in selected]
-
         batch = EvidenceService().collect(
             state,
             task_id,
-            selected_rows,
+            payload["results"],
             backend=backend,
             max_chars=self._config.evidence_max_chars,
             prefer_full_page=self._config.fetch_full_page,
             query=query,
-            preselected=self._config.enable_evidence_selection,
         )
 
-        batch.notices = list(dict.fromkeys([
-            *batch.notices, *(payload.get("notices") or []), *selection_notices,
-        ]))
-        if audit:
-            # 根据实际登记结果建立映射，不假设登记列表永远一一对应。
-            audit["selected"] = [{
-                "candidate_id": item.candidate_id,
-                "evidence_id": next(
-                    key for key in batch.evidence_ids
-                    if batch.evidence[key].text == item.text
-                    and batch.sources[batch.evidence[key].source_id].url == item.url
-                    and batch.evidence[key].kind == item.kind
-                ),
-            } for item in selected]
-            batch.selection_audit = audit
+        batch.notices = list(payload.get("notices") or [])
 
         if payload.get("answer"):
             batch.notices.append(

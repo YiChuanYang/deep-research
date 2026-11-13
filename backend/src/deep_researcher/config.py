@@ -30,12 +30,6 @@ SNAPSHOT_FIELDS = {
     "search_timeout",
     "search_max_results",
     "enable_query_rewrite",
-    "enable_evidence_selection",
-    "enable_page_extraction",
-    "selection_max_sources",
-    "selection_max_fragments",
-    "selection_per_source",
-    "selection_input_chars",
     "fetch_full_page",
     "max_tokens_per_source",
     "enable_notes",
@@ -80,13 +74,6 @@ class Configuration(BaseModel):
     search_max_results: int = Field(default=5, ge=1, le=20)
     # 仅控制搜索前的查询改写，搜索次数和结果数仍由原逻辑决定。
     enable_query_rewrite: bool = True
-    enable_evidence_selection: bool = True
-    enable_page_extraction: bool = True
-    selection_max_sources: int = Field(default=3, ge=1, le=10)
-    selection_max_fragments: int = Field(default=6, ge=1, le=20)
-    selection_per_source: int = Field(default=2, ge=1, le=5)
-    # 模型用户消息的字符预算；不是 token 数，也不包含固定系统提示词。
-    selection_input_chars: int = Field(default=16000, ge=4000, le=50000)
     tavily_api_key: SecretStr | None = Field(default=None, repr=False)
 
     fetch_full_page: bool = False
@@ -204,8 +191,6 @@ class Configuration(BaseModel):
         # 新研究在 snapshot() 中保存开关，恢复时不受当前环境开关影响。
         saved = dict(snapshot)
         saved.setdefault("enable_query_rewrite", False)
-        saved.setdefault("enable_evidence_selection", False)
-        saved.setdefault("enable_page_extraction", False)
         restored = type(self).model_validate({
             **self.model_dump(),
             **saved,

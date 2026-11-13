@@ -60,7 +60,6 @@ class SummarizationService:
             intent=task.intent,
             query=task.effective_query,
             context=context,
-            material_notices="；".join(task.notices) or "无",
         )
 
         logger.info(

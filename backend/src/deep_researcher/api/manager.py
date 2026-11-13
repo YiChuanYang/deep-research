@@ -14,7 +14,7 @@ from filelock import Timeout as FileLockTimeout
 
 from deep_researcher.api.errors import ApiError
 from deep_researcher.events import EventStore
-from deep_researcher.config import Configuration, get_config
+from deep_researcher.config import SNAPSHOT_FIELDS, Configuration, get_config
 from deep_researcher.graph.graph_researcher import (
     DEFAULT_GRAPH_DIR,
     GraphDeepResearcher,
@@ -157,6 +157,16 @@ class ResearchManager:
                     409,
                     "already_completed",
                     "研究已经完成",
+                    run_id=run_id,
+                )
+
+            # 不把后续版本的筛选/反思检查点悄悄当作 v2 续跑。
+            # 历史结果仍能查看，重新研究时应创建新的 run_id。
+            if set(snapshot.info.config) - SNAPSHOT_FIELDS:
+                raise ApiError(
+                    409,
+                    "incompatible_workflow_version",
+                    "该研究使用后续版本流程，当前 v2 不能续跑；请用相同主题新建研究",
                     run_id=run_id,
                 )
 

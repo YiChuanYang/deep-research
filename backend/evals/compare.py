@@ -39,7 +39,7 @@ def compare_suites(baseline_dir: Path, candidate_dir: Path) -> dict[str, Any]:
             return {"pass": 1.0, "fail": 0.0}.get(status)
         if metric == "research_duration_s":
             return row.get("research_duration_s")
-        if metric in {"model_requests", "search_requests", "extraction_requests", "extraction_pages", "total_tokens", "report_ttft_s"}:
+        if metric in {"model_requests", "search_requests", "total_tokens", "report_ttft_s"}:
             return (row.get("telemetry") or {}).get(metric)
         if row["review_status"] != "reviewed":
             return None
@@ -59,7 +59,7 @@ def compare_suites(baseline_dir: Path, candidate_dir: Path) -> dict[str, Any]:
         "execution_completion", "overall_rule_pass", "coverage_ratio", "limitations_score",
         "citation_coverage_complete", "citation_support_complete",
         "citation_coverage_sampled", "citation_support_sampled",
-        "research_duration_s", "model_requests", "search_requests", "extraction_requests", "extraction_pages", "total_tokens", "report_ttft_s",
+        "research_duration_s", "model_requests", "search_requests", "total_tokens", "report_ttft_s",
     ]:
         pairs = []
         for key in common:

@@ -171,7 +171,7 @@ class RecordingSearch:
 
 
 def test_search_summary_and_note_use_actual_query(state: SummaryState, tmp_path: Path) -> None:
-    config = Configuration(search_api=SearchAPI.DUCKDUCKGO, notes_workspace=str(tmp_path), enable_evidence_selection=False)
+    config = Configuration(search_api=SearchAPI.DUCKDUCKGO, notes_workspace=str(tmp_path))
     state.get_task(1).search_query = REWRITTEN
     tool = RecordingSearch()
     service = SearchService(config, search_tool=cast(SearchTool, tool))
@@ -206,7 +206,7 @@ def test_checkpoint_reuses_rewritten_or_fallback_query_after_search_failure(
     state: SummaryState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     response: str | BaseException,
 ) -> None:
-    config = Configuration(search_api=SearchAPI.DUCKDUCKGO, enable_notes=False, enable_evidence_selection=False)
+    config = Configuration(search_api=SearchAPI.DUCKDUCKGO, enable_notes=False)
     tool = RecordingSearch(fail_first=True)
     query_models: list[ScriptedLLM] = []
 
@@ -231,7 +231,7 @@ def test_checkpoint_reuses_rewritten_or_fallback_query_after_search_failure(
     # 运行真实搜索服务和证据整理，只替换外部搜索工具。
     monkeypatch.setattr(
         "deep_researcher.graph.graph_nodes.SearchService",
-        lambda configuration, **kwargs: SearchService(configuration, search_tool=cast(SearchTool, tool), **kwargs),
+        lambda configuration: SearchService(configuration, search_tool=cast(SearchTool, tool)),
     )
     researcher = GraphDeepResearcher(config, data_dir=tmp_path, nodes_factory=OfflineNodes)
     with pytest.raises(RuntimeError, match="temporary search failure"):

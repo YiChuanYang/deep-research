@@ -16,7 +16,6 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from deep_researcher.config import Configuration, get_config
 from deep_researcher.events import EventStore
-from deep_researcher.selection_audit import SelectionAuditStore
 from deep_researcher.graph.graph_nodes import (
     ResearchNodes,
     build_graph,
@@ -199,7 +198,6 @@ class GraphDeepResearcher:
                 config,
                 execution_id,
             )
-            nodes.selection_audits = SelectionAuditStore(self._directory / "selection_audits.sqlite3")
 
             try:
                 # from_conn_string 是上下文管理器。
@@ -534,7 +532,6 @@ class GraphDeepResearcher:
               )
 
               self._events.delete_run(run_id)
-              SelectionAuditStore(self._directory / "selection_audits.sqlite3").delete_run(run_id)
 
               # 最后删除元数据；失败重试还需要其中的配置。
               repository.purge_deleted(run_id)
@@ -651,7 +648,16 @@ class GraphDeepResearcher:
             if not isinstance(payload, dict):
                 raise RuntimeError("图业务状态格式错误")
 
-            state = decode_state(payload)
+            # 回退兼容仅用于读取：v5 多出的质量字段不属于 v2 的任务模型。
+            # 构造新字典，不改写历史检查点；新研究仍使用原版 v2 数据模型。
+            readable_payload = {
+                **payload,
+                "todo_items": [
+                    {key: value for key, value in item.items() if key != "review_status"}
+                    for item in payload["todo_items"]
+                ],
+            }
+            state = decode_state(readable_payload)
 
             if state.run_id != run_id:
                 raise RuntimeError(
