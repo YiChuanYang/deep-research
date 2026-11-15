@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from time import perf_counter
@@ -16,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
 from deep_researcher.config import Configuration
+from deep_researcher.graph import report_cycle
 from deep_researcher.graph.graph_state import (
     ResearchGraphState,
     decode_state,
@@ -33,9 +35,13 @@ from deep_researcher.prompts import (
     summarizer_system_prompt,
     todo_planner_system_prompt,
 )
+from deep_researcher.report_iteration import ReportIteration
+from deep_researcher.services.evidence_service import EvidenceService
 from deep_researcher.services.note_service import NoteService
 from deep_researcher.services.planner import PlanningService
 from deep_researcher.services.query_rewriter import QueryRewriteService
+from deep_researcher.services.report_format import report_suffix
+from deep_researcher.services.report_reflection import ReportReflectionService
 from deep_researcher.services.reporter import ReportingService
 from deep_researcher.services.search import SearchService
 from deep_researcher.services.summarizer import SummarizationService
@@ -90,6 +96,9 @@ class ResearchNodes:
             sys_prompt=reporter_system_prompt,
             enable_tool_call=False,
         )
+
+    def report_reflection_service(self) -> ReportReflectionService:
+        return ReportReflectionService(self.llm(), self.config)
     def bind(
         self,
         name: str,
@@ -130,6 +139,10 @@ class ResearchNodes:
                 "summarize": "tasks",
                 "save_note": "tasks",
                 "report": "report",
+                "reflect_report": "report",
+                "prepare_report_revision": "report",
+                "finalize_report": "report",
+                "block_report": "report",
                 "save_report": "save_report",
             }
 
@@ -214,6 +227,8 @@ class ResearchNodes:
         finally:
             agent.clear_history()
 
+        if self.config.enable_report_reflection:
+            return report_cycle.update(ReportIteration(initial_task_ids=report_cycle.selected_ids(state, graph_state)))
         return {}
 
     def select_task(
@@ -221,12 +236,7 @@ class ResearchNodes:
             state:SummaryState,
             graph_state:ResearchGraphState,
     )->dict[str,Any]:
-        limit = graph_state["max_tasks"]
-        tasks = (
-            state.todo_items 
-            if limit is None 
-            else state.todo_items[:limit]
-        )
+        tasks = [state.get_task(task_id) for task_id in report_cycle.selected_ids(state, graph_state)]
         for task in tasks:
             if task.status not in {
                 "completed",
@@ -270,6 +280,16 @@ class ResearchNodes:
         task.search_query = QueryRewriteService(
             self.query_agent, self.config,
         ).rewrite_task(state, task_id)
+        if graph_state.get("report_iteration") is not None:
+            cycle = report_cycle.iteration(graph_state)
+            supplement = next((item for item in cycle.supplements if item.task_id == task_id), None)
+            used = {report_cycle.normalized(item.effective_query) for item in state.todo_items
+                    if item.id != task_id and item.status in {"completed", "skipped"}}
+            if supplement is not None and report_cycle.normalized(task.effective_query) in used:
+                task.status = "skipped"
+                task.notices.append("补充查询与已执行查询重复，未重复发送搜索")
+                supplement.search_completed = True
+                return report_cycle.update(cycle)
         # bind 会把结果写进 payload；sync 检查点完成后才进入搜索。
         # 搜索失败后从 search 恢复，复用这里已经确定的查询。
         return {}
@@ -297,6 +317,19 @@ class ResearchNodes:
                 "搜索没有可用证据"
             )
 
+        if graph_state.get("report_iteration") is not None:
+            cycle = report_cycle.iteration(graph_state)
+            supplement = next((item for item in cycle.supplements if item.task_id == task_id), None)
+            if supplement is not None:
+                previous = decode_state(graph_state["payload"])
+                known = {report_cycle.evidence_fingerprint(item) for item in previous.evidence.values()}
+                for key in task.evidence_ids:
+                    fingerprint = report_cycle.evidence_fingerprint(state.evidence[key])
+                    if fingerprint not in known:
+                        supplement.novel_evidence_ids.append(key)
+                        known.add(fingerprint)
+                supplement.search_completed = True
+                return report_cycle.update(cycle)
         return {}
     def summarize(
         self,
@@ -360,6 +393,8 @@ class ResearchNodes:
         state: SummaryState,
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
+        cycle = report_cycle.iteration(graph_state) if self.config.enable_report_reflection else None
+        previous = cycle.drafts[-1] if cycle and cycle.drafts else None
         writer = get_stream_writer()
         # 每次重新生成有独立编号，前端据此清空旧草稿。
         generation_id = uuid4().hex
@@ -395,12 +430,15 @@ class ResearchNodes:
             flush()
             emit("report.validating")
 
-        emit("report.started")
+        emit("report.started", revision=cycle.revision if cycle else 0)
         try:
             result = ReportingService(self.reporter_agent).generate_report(
                 state,
                 on_text=on_text,
                 on_validating=on_validating,
+                include_references=cycle is None,
+                previous_report=previous.text if previous else None,
+                feedback=json.dumps(previous.review.model_dump(), ensure_ascii=False) if previous and previous.review else None,
             )
         finally:
             flush()
@@ -409,26 +447,10 @@ class ResearchNodes:
         # generated 仅表示报告服务返回；正式可交付仍以 report_ready 为准。
         report = result.text
 
-        unfinished = [
-            task
-            for task in state.todo_items
-            if task.status != "completed"
-        ]
-
-        if unfinished:
-            labels = {
-                "pending": "本轮未执行",
-                "running": "尚未完成",
-                "skipped": "无有效资料",
-            }
-
-            report += "\n\n## 研究范围说明\n\n"
-
-            report += "\n".join(
-                f"- 任务 {task.id}「{task.title}」："
-                f"{labels[task.status]}。"
-                for task in unfinished
-            )
+        if cycle is not None:
+            report_cycle.commit_draft(cycle, result.text, list(result.citation_ids))
+            return report_cycle.update(cycle)
+        report += report_suffix(state)
 
         state.structured_report = report
         state.report_citation_ids = list(
@@ -436,6 +458,66 @@ class ResearchNodes:
         )
 
         return {}
+
+    def reflect_report(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        cycle = report_cycle.iteration(graph_state)
+        draft = cycle.drafts[-1]
+        if draft.revision != cycle.revision or draft.review is not None:
+            raise ValueError("待评审的报告版本不一致")
+        outcome = self.report_reflection_service().review(state, draft, allow_repair=cycle.protocol_repairs_used == 0)
+        cycle.protocol_repairs_used += outcome.repairs_used
+        draft.review, draft.review_error = outcome.review, outcome.error
+        draft.review_input_chars = outcome.input_chars
+        report_cycle.decide_after_review(cycle, self.config)
+        get_stream_writer()({"type": "report.reviewed", "data": {
+            "revision": cycle.revision, "status": cycle.status,
+            "issue_count": len(draft.review.issues) if draft.review else None,
+        }})
+        return report_cycle.update(cycle)
+
+    def prepare_report_revision(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        cycle = report_cycle.iteration(graph_state)
+        report_cycle.prepare_round(state, cycle, self.config)
+        return report_cycle.update(cycle)
+
+    def finalize_report(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        cycle = report_cycle.iteration(graph_state)
+        if cycle.status not in {"accepted", "limited", "unreviewed"} or cycle.next_action != "finalize":
+            raise ValueError("报告尚未达到交付条件")
+        draft = cycle.drafts[-1]
+        if draft.review and draft.review.blocking:
+            raise ValueError("仍有未解决的实质问题，不能交付报告")
+        if cycle.status == "accepted" and (draft.review is None or draft.review.issues):
+            raise ValueError("缺少与当前报告绑定的通过评审")
+        if cycle.status == "unreviewed" and any(item.review and item.review.blocking for item in cycle.drafts):
+            raise ValueError("未复核状态不能绕过已记录的实质问题")
+        allowed = [key for task in state.todo_items if task.status == "completed" for key in task.citation_ids]
+        if draft.citation_ids:
+            actual = EvidenceService().validate(state, draft.text, allowed)
+            if set(actual) != set(draft.citation_ids):
+                raise ValueError("报告引用记录与正文不一致")
+        elif draft.text != "# 研究结果\n\n本轮未获得足以形成结论的资料。":
+            raise ValueError("无引用报告不属于资料不足说明")
+        state.report_limitations = [
+            {"accepted": "模型复核未提出需要继续处理的问题；这不代表外部事实已获证实。",
+             "limited": "本次为有限交付：" + cycle.stop_reason,
+             "unreviewed": "报告未完成语义复核：" + cycle.stop_reason}[cycle.status]
+        ]
+        if draft.review:
+            state.report_limitations.extend("待补充：" + issue.reason for issue in draft.review.issues)
+        body = draft.text
+        if draft.citation_ids:
+            body += "\n\n## 引用证据\n\n" + EvidenceService().references(state, draft.citation_ids)
+        state.structured_report = body + report_suffix(state)
+        state.report_citation_ids = list(draft.citation_ids)
+        logger.info("报告进入交付 · 第 %d 版 · %s", cycle.revision + 1, cycle.status,
+                    extra={"event": "report_adopted", "review_status": cycle.status})
+        return {}
+
+    def block_report(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        # 单独节点失败：上一节点保存的草稿、评审和预算仍然可查。
+        cycle = report_cycle.iteration(graph_state)
+        raise RuntimeError("报告仍有未解决的实质问题，已保留草稿，不能发布：" + cycle.stop_reason)
 
     def save_report(
         self,
@@ -475,6 +557,10 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
         "summarize":nodes.summarize,
         "save_note":nodes.save_note,
         "report":nodes.report,
+        "reflect_report": nodes.reflect_report,
+        "prepare_report_revision": nodes.prepare_report_revision,
+        "finalize_report": nodes.finalize_report,
+        "block_report": nodes.block_report,
         "save_report":nodes.save_report
     }
     for name,action in actions.items():
@@ -501,6 +587,10 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
             else "summarize"
         )
 
+    def after_rewritten(graph_state: ResearchGraphState) -> str:
+        task = decode_state(graph_state["payload"]).get_task(nodes.task_id(graph_state))
+        return "select_task" if task.status == "skipped" else "search"
+
     def after_summarized(graph_state:ResearchGraphState)->str:
         """总结后的路由函数"""
         summary_state = decode_state(graph_state["payload"])
@@ -524,7 +614,7 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
             "report":"report",
         }
     )
-    builder.add_edge("rewrite_query", "search")
+    builder.add_conditional_edges("rewrite_query", after_rewritten, ["select_task", "search"])
     builder.add_conditional_edges(
         "search",
         after_searched,
@@ -542,7 +632,24 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
         }
     )
     builder.add_edge("save_note","select_task")
-    builder.add_edge("report","save_report")
+    def after_report(values: ResearchGraphState) -> str:
+        if not nodes.config.enable_report_reflection:
+            return "save_report"
+        return {"review": "reflect_report", "finalize": "finalize_report", "blocked": "block_report"}[
+            report_cycle.iteration(values).next_action]
+
+    def after_review(values: ResearchGraphState) -> str:
+        return {"prepare": "prepare_report_revision", "finalize": "finalize_report", "blocked": "block_report"}[
+            report_cycle.iteration(values).next_action]
+
+    def after_prepared(values: ResearchGraphState) -> str:
+        return {"tasks": "select_task", "report": "report", "finalize": "finalize_report", "blocked": "block_report"}[
+            report_cycle.iteration(values).next_action]
+
+    builder.add_conditional_edges("report", after_report, ["save_report", "reflect_report", "finalize_report", "block_report"])
+    builder.add_conditional_edges("reflect_report", after_review, ["prepare_report_revision", "finalize_report", "block_report"])
+    builder.add_conditional_edges("prepare_report_revision", after_prepared, ["select_task", "report", "finalize_report", "block_report"])
+    builder.add_edge("finalize_report", "save_report")
     builder.add_edge("save_report",END)
 
     return builder.compile(checkpointer=checkpointer)

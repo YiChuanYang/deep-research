@@ -168,6 +168,14 @@ def run_suite(
             record["research_duration_s"] = round(perf_counter() - started, 6)
             record["finished_at"] = utc_now()
             record["telemetry"] = tracker.snapshot() if tracker is not None else None
+            # 失败研究也导出已提交的草稿审计；不冒充成功报告或进入质量分母。
+            if researcher is not None and record["run_id"]:
+                try:
+                    audit_snapshot = snapshot or researcher.read_run(record["run_id"])
+                    if audit_snapshot.report_iteration is not None:
+                        write_json(directory / "report_iterations.json", audit_snapshot.report_iteration.model_dump(mode="json"))
+                except Exception as audit_error:
+                    record["iteration_export_error"] = type(audit_error).__name__
             write_json(record_path, record)
 
         if record["execution_status"] == "completed":

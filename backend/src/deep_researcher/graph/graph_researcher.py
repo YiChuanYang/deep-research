@@ -16,6 +16,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from deep_researcher.config import Configuration, get_config
 from deep_researcher.events import EventStore
+from deep_researcher.report_iteration import ReportIteration
 from deep_researcher.graph.graph_nodes import (
     ResearchNodes,
     build_graph,
@@ -54,6 +55,14 @@ class RunSnapshot:
     next_nodes: tuple[str, ...]
     active_task_id: int | None
     graph_finished: bool
+    report_iteration: ReportIteration | None = None
+
+    @property
+    def selected_task_ids(self) -> list[int]:
+        if self.report_iteration is not None:
+            return self.report_iteration.selected_task_ids
+        tasks = self.state.todo_items if self.state else []
+        return [task.id for task in (tasks if self.info.max_tasks is None else tasks[:self.info.max_tasks])]
 
     @property
     def report_ready(self) -> bool:
@@ -670,6 +679,8 @@ class GraphDeepResearcher:
             next_nodes=tuple(snapshot.next),
             active_task_id=values.get("active_task_id"),
             graph_finished=values.get("finished") is True,
+            report_iteration=(ReportIteration.model_validate(values["report_iteration"])
+                              if values.get("report_iteration") is not None else None),
         )
 
         if info.status == "completed" and not result.report_ready:

@@ -8,6 +8,7 @@ from typing import Any
 
 from deep_researcher.graph.graph_state import decode_state
 from deep_researcher.models import SummaryState
+from deep_researcher.services.report_format import report_suffix
 from deep_researcher.services.evidence_service import (
     CITATION,
     ID_PATTERN,
@@ -47,33 +48,8 @@ def extract_report_body(
     if not report.strip():
         return None, "报告为空"
 
-    labels = {
-        "pending": "本轮未执行",
-        "running": "尚未完成",
-        "skipped": "无有效资料",
-    }
+    scope = report_suffix(state)
 
-    unfinished = [
-        task
-        for task in state.todo_items
-        if task.status != "completed"
-    ]
-
-    scope = ""
-
-    if unfinished:
-        scope = (
-            "\n\n## 研究范围说明\n\n"
-            + "\n".join(
-                (
-                    f"- 任务 {task.id}「{task.title}」："
-                    f"{labels.get(task.status, task.status)}。"
-                )
-                for task in unfinished
-            )
-        )
-
-    # 有引用时，参考条目是 Reporter 程序自动生成的。
     if state.report_citation_ids:
         try:
             references = EvidenceService().references(

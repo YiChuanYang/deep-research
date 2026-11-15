@@ -8,7 +8,7 @@ const topic = '高光谱图像分类的研究现状与发展趋势';
 const evidence = '光谱与空间特征的联合建模，是高光谱图像分类中的重要研究方向。自监督预训练可减少对标注样本的依赖，但跨传感器与跨场景的泛化仍需要进一步验证。';
 const markdown = `# 高光谱图像分类：研究现状与发展趋势\n\n## 摘要\n\n高光谱图像分类正从依赖人工特征，转向光谱与空间信息的联合学习。研究重点逐步延伸到少样本学习和跨场景泛化。[E0001]\n\n## 01 · 主要技术路线\n\n现有方法可以从特征表达和训练方式两个维度理解。**方法的适用条件与验证数据同样重要。**\n\n| 技术路线 | 主要特点 | 适用条件 |\n| --- | --- | --- |\n| 传统机器学习 | 特征可解释、计算开销较低 | 标注样本有限 |\n| 深度学习 | 联合建模光谱与空间结构 | 有足够训练数据 |\n\n## 02 · 当前挑战\n\n- 标注稀缺与类别不平衡。\n- 传感器差异带来的领域偏移。\n- 跨场景评测与实际部署之间的差距。[E0001]\n\n> 阅读结论时，应同时核对实验条件与证据范围。\n\n## 03 · 后续方向\n\n在统一的评测条件下比较模型，往往比孤立的最高准确率更有参考价值。\n\n\`[E0001]\` 是代码中的编号，不生成按钮。未知编号 [E9999] 不生成按钮。\n\n<img src="x" onerror="window.bad=true">\n\n[不安全链接](javascript:alert(1))`;
 
-interface Scenario { completed: boolean; failed: boolean; interrupted: boolean; offline: boolean; queueFull: boolean; uncertain: boolean; postCount: number; resumeBodies: unknown[]; offsets: number[]; deletedIds: string[]; deleteRequests: string[]; deleteMode: 'ok' | 'busy' | 'uncertain'; checkpoint: 'summarize' | 'report' | 'save_report'; evidenceCount: number; citationCount: number }
+interface Scenario { reportCycle?: 'improving' | 'blocked'; completed: boolean; failed: boolean; interrupted: boolean; offline: boolean; queueFull: boolean; uncertain: boolean; postCount: number; resumeBodies: unknown[]; offsets: number[]; deletedIds: string[]; deleteRequests: string[]; deleteMode: 'ok' | 'busy' | 'uncertain'; checkpoint: 'summarize' | 'report' | 'save_report'; evidenceCount: number; citationCount: number }
 
 async function mockApi(page: Page, overrides: Partial<Scenario> = {}): Promise<Scenario> {
   const scenario: Scenario = { completed: false, failed: false, interrupted: false, offline: false, queueFull: false, uncertain: false, postCount: 0, resumeBodies: [], offsets: [], deletedIds: [], deleteRequests: [], deleteMode: 'ok', checkpoint: 'summarize', evidenceCount: 4, citationCount: 0, ...overrides };
@@ -33,6 +33,10 @@ async function mockApi(page: Page, overrides: Partial<Scenario> = {}): Promise<S
       const visible = items.filter(item => !scenario.deletedIds.includes(item.run_id));
       return route.fulfill({ json: { items: offset ? visible.filter(item => item.run_id === failedId) : visible, offset, limit: 10, has_more: offset === 0 && !scenario.deletedIds.includes(failedId) } });
     }
+    if (path.endsWith('/iterations')) return route.fulfill({ json: { run_id: activeId, iteration: {
+      drafts: [{ revision: 0, text: 'Original draft [E0001]', citation_ids: ['E0001'], review: { issues: [{ kind: 'missing_evidence', reason: 'Missing comparison', paragraph_id: '', evidence_ids: [], question: 'Compare methods', query: 'comparison query' }] }, review_error: null }],
+      supplements: [{ task_id: 5, revision: 1, question: 'Compare methods', query: 'comparison query', novel_evidence_ids: ['E0002'] }],
+    } } });
     if (path.endsWith('/events')) return route.fulfill({ contentType: 'text/event-stream', body: ': test heartbeat\n\n' });
     const id = path.split('/')[3];
     if (request.method() === 'DELETE' && id) {
@@ -59,6 +63,10 @@ async function mockApi(page: Page, overrides: Partial<Scenario> = {}): Promise<S
       status: done ? 'completed' : failed ? 'failed' : 'running', execution: done || failed || interrupted ? 'idle' : 'executing',
       next_nodes: done ? [] : [scenario.checkpoint], active_task_id: tasksDone ? null : 2, planned_tasks: 4, selected_tasks: 3,
       completed_tasks: tasksDone ? 2 : 1, skipped_tasks: tasksDone ? 1 : 0, report_ready: done, requires_recovery_confirmation: interrupted, error_message: failed ? '上次执行失败，可以恢复研究。' : null,
+      report_iteration: scenario.reportCycle ? {
+        revision: 1, max_revisions: 2, status: scenario.reportCycle, stop_reason: scenario.reportCycle === 'blocked' ? 'Unresolved evidence problem' : '',
+        draft_count: 1, initial_total: 3, initial_completed: 3, supplemental_total: 1, supplemental_completed: 0, issue_count: 1,
+      } : null,
       tasks: [
         { id: 1, title: '主要研究方法与技术演进', status: 'completed', selected: true, evidence_count: 5, citation_count: 3 },
         { id: 2, title: '关键技术、评测方法与公开数据集', status: tasksDone ? 'completed' : 'running', selected: true, evidence_count: scenario.evidenceCount, citation_count: tasksDone ? 2 : scenario.citationCount },
@@ -439,4 +447,30 @@ test('failed stream retains draft without enabling final report', async ({ page 
   await expect(page.getByText('生成已暂停 · 草稿未定稿')).toBeVisible();
   await expect(page.getByRole('tab', { name: '研究报告' })).toBeDisabled();
   await expect(page.getByRole('button', { name: /继续研究/ }).first()).toBeEnabled();
+});
+
+
+test('report iteration shows history and supplement without publishing draft', async ({ page }, testInfo) => {
+  await mockApi(page, { reportCycle: 'improving' });
+  await page.goto('/#/research/' + activeId);
+  const panel = page.getByRole('region', { name: '报告迭代' });
+  await expect(panel).toContainText('初始任务已处理 3 / 3');
+  await panel.locator('summary').first().click();
+  await expect(panel).toContainText('Missing comparison');
+  await panel.getByText('阅读本版正文', { exact: true }).click();
+  await expect(panel.locator('pre')).toHaveText('Original draft [E0001]');
+  await expect(panel).toContainText('comparison query');
+  await expect(page.getByRole('tab', { name: '研究报告' })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('report-iteration.png'), fullPage: true });
+});
+
+test('blocked report keeps draft readable and prevents useless resume', async ({ page }) => {
+  await mockApi(page, { reportCycle: 'blocked', failed: true });
+  await page.goto('/#/research/' + activeId);
+  await expect(page.getByRole('button', { name: '继续研究', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: '研究报告' })).toBeDisabled();
+  const panel = page.getByRole('region', { name: '报告迭代' });
+  await expect(panel).toContainText('Unresolved evidence problem');
+  await panel.locator('summary').first().click();
+  await expect(panel).toContainText('Missing comparison');
 });

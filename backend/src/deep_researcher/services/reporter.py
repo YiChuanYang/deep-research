@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from contextlib import closing
@@ -12,6 +13,7 @@ from deep_researcher.logging_config import log_operation
 from deep_researcher.models import CitedText, SummaryState
 from deep_researcher.prompts import report_writer_instructions
 from deep_researcher.services.evidence_service import EvidenceService
+from deep_researcher.services.report_format import report_paragraphs
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,9 @@ class ReportingService:
         *,
         on_text: Callable[[str], None] | None = None,
         on_validating: Callable[[], None] | None = None,
+        include_references: bool = True,
+        previous_report: str | None = None,
+        feedback: str | None = None,
     ) -> CitedText:
         started_at = perf_counter()
 
@@ -85,6 +90,14 @@ class ReportingService:
                 allowed,
             ),
         )
+        if previous_report:
+            prompt += (
+                "\n下面是待修订的报告草稿，不是已证实的事实。结合全部任务材料与反馈输出完整的新正文。"
+                "保留仍被证据支持的有效内容；无法支持的结论应删除或缩小范围。不得把补搜失败写成证据支持。\n"
+                "P 编号与反馈的 paragraph_id 一一对应，只用于定位，不要写进新正文。\n"
+                + json.dumps(report_paragraphs(previous_report), ensure_ascii=False)
+                + "\n需要处理的反馈：\n" + (feedback or "无")
+            )
 
         logger.info(
             "正在汇总报告 · 任务=%s · 可引用证据=%d",
@@ -158,7 +171,7 @@ class ReportingService:
             f"{body}\n\n"
             f"## 引用证据\n\n"
             f"{references}"
-        )
+        ) if include_references else body
 
         duration = perf_counter() - started_at
 

@@ -20,6 +20,7 @@ from deep_researcher.api.schemas import (
     RunItem,
     RunListResponse,
     RunStatusResponse,
+    ReportIterationProgress,
     TaskProgress,
     TaskResultResponse,
 )
@@ -131,12 +132,21 @@ def get_research_status(
         else []
     )
 
-    selected = (
-        tasks
-        if info.max_tasks is None
-        else tasks[:info.max_tasks]
-    )
-    selected_ids = {task.id for task in selected}
+    selected_ids = set(snapshot.selected_task_ids)
+    selected = [task for task in tasks if task.id in selected_ids]
+    cycle = snapshot.report_iteration
+    completed_ids = {task.id for task in tasks if task.status in {"completed", "skipped"}}
+    iteration_progress = None
+    if cycle is not None:
+        last = cycle.drafts[-1] if cycle.drafts else None
+        iteration_progress = ReportIterationProgress(
+            revision=cycle.revision, max_revisions=info.config.get("report_max_revisions", 2),
+            status=cycle.status, stop_reason=cycle.stop_reason, draft_count=len(cycle.drafts),
+            initial_total=len(cycle.initial_task_ids), initial_completed=len(set(cycle.initial_task_ids) & completed_ids),
+            supplemental_total=len(cycle.supplements),
+            supplemental_completed=sum(item.task_id in completed_ids for item in cycle.supplements),
+            issue_count=len(last.review.issues) if last and last.review else None,
+        )
 
     execution = manager.execution(run_id)
     item = _item(info, manager)
@@ -185,11 +195,22 @@ def get_research_status(
             and not snapshot.report_ready
         ),
         error_message=(
+            "报告存在未解决的问题，草稿已保留；请查看迭代记录并按主题新建研究"
+            if cycle is not None and cycle.status == "blocked"
+            else
             "上次执行失败，可恢复研究；详情请按 run_id 查看日志"
             if display_status == "failed"
             else None
         ),
+        report_iteration=iteration_progress,
     )
+
+
+@router.get("/research/{run_id}/iterations")
+def get_report_iterations(run_id: RunId, request: Request) -> dict[str, object]:
+    """草稿是独立的只读资源；取得草稿不表示正式报告已经可交付。"""
+    cycle = _manager(request).get_snapshot(run_id).report_iteration
+    return {"run_id": run_id, "iteration": cycle.model_dump(mode="json") if cycle else None}
 
 
 @router.get(

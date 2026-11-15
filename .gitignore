@@ -13,6 +13,9 @@ dist/
 *.log
 workspace/
 demo/
+!/backend/demo/
+/backend/demo/*
+!/backend/demo/demo_report_iteration.py
 notes/
 logs/
 data/

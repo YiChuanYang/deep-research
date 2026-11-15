@@ -1,4 +1,4 @@
-import type { Accepted, ResearchResult, RunList, RunProgress } from './types';
+import type { Accepted, ResearchResult, RunList, RunProgress, ReportIterationDetail } from './types';
 
 interface ErrorBody { error?: { code?: string; message?: string; run_id?: string | null; error_id?: string | null } }
 
@@ -57,6 +57,7 @@ export const getHealth = (signal?: AbortSignal) => request<{ status: string }>('
 export const listRuns = (offset: number, signal?: AbortSignal) => request<RunList>(`/research?limit=10&offset=${offset}`, {}, signal);
 export const getProgress = (id: string, signal?: AbortSignal) => request<RunProgress>(runPath(id), {}, signal);
 export const getResult = (id: string, signal?: AbortSignal) => request<ResearchResult>(`${runPath(id)}/result`, {}, signal);
+export const getIterations = (id: string, signal?: AbortSignal) => request<ReportIterationDetail>(`${runPath(id)}/iterations`, {}, signal);
 export const getReport = (id: string) => request<Blob>(`${runPath(id)}/report`, {}, undefined, true);
 export const deleteResearch = (id: string): Promise<void> => request<void>(runPath(id), { method: 'DELETE' });
 

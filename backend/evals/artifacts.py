@@ -78,6 +78,8 @@ def export_attempt(
         "evidence": {key: asdict(value) for key, value in state.evidence.items()},
     })
     write_json(directory / "checks.json", checks)
+    if snapshot.report_iteration is not None:
+        write_json(directory / "report_iterations.json", snapshot.report_iteration.model_dump(mode="json"))
     write_json(directory / "review.json", make_review_template(state, checks, case))
     return checks
 

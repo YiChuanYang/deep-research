@@ -10,6 +10,7 @@ import ReportContent from '../components/ReportContent.vue';
 import EvidenceDrawer from '../components/EvidenceDrawer.vue';
 import ResearchProgress from '../components/ResearchProgress.vue';
 import StreamingReport from '../components/StreamingReport.vue';
+import ReportIterationPanel from '../components/ReportIterationPanel.vue';
 
 const props = defineProps<{ runId: string }>();
 const { progress, result, loading, error, notFound, lastUpdated, refresh, draft, phase, connection, currentNode } = useResearch(props.runId);
@@ -20,7 +21,7 @@ const actionError = ref('');
 const copied = ref('');
 const selectedEvidence = ref<Citation | null>(null);
 const confirmDialog = ref<HTMLDialogElement | null>(null);
-const canResume = computed(() => Boolean(progress.value && !error.value && !progress.value.report_ready && progress.value.execution === 'idle' && progress.value.status !== 'completed'));
+const canResume = computed(() => Boolean(progress.value && !error.value && !progress.value.report_ready && progress.value.execution === 'idle' && progress.value.report_iteration?.status !== 'blocked' && progress.value.status !== 'completed'));
 const phases = [{ name: 'progress', title: '研究进度', icon: BookOpen }, { name: 'report', title: '研究报告', icon: FileText }, { name: 'sources', title: '引用证据', icon: Link2 }];
 
 watch(result, value => { if (value) { tab.value = 'report'; refreshHistory(); } });
@@ -81,6 +82,7 @@ function tabKeys(event: KeyboardEvent): void {
     <template v-if="progress">
       <header class="research-heading"><div class="research-kicker"><span :class="['status-badge', progress.report_ready ? 'completed' : progress.requires_recovery_confirmation ? 'failed' : progress.status]"><span class="status-dot"></span>{{ progressLabel(progress) }}</span></div><h1>{{ progress.topic }}</h1><div class="detail-meta"><span>已规划 {{ progress.planned_tasks }} 项 · 本轮执行 {{ progress.selected_tasks }} 项</span><button class="text-button quiet" @click="copy(runId, 'id')"><Check v-if="copied === 'id'" :size="13" /><Copy v-else :size="13" />{{ copied === 'id' ? '编号已复制' : '复制研究编号' }}</button></div></header>
       <div v-if="progress.execution === 'idle' && !progress.report_ready && (progress.status === 'failed' || progress.requires_recovery_confirmation || progress.status === 'pending')" class="recovery-banner"><RotateCcw :size="20" /><div><strong>{{ progress.requires_recovery_confirmation ? '这项研究等待恢复' : progress.status === 'pending' ? '这项研究尚未开始' : '研究暂时停在这里' }}</strong><p>{{ progress.error_message || '已保存的研究进度仍然保留，你可以从原来的位置继续。' }}</p></div><button class="button primary" :disabled="!canResume || resuming" @click="requestResume"><LoaderCircle v-if="resuming" class="spin" :size="15" />继续研究<ArrowRight :size="15" /></button></div>
+      <ReportIterationPanel v-if="progress.report_iteration" :run-id="runId" :progress="progress.report_iteration" />
       <div class="research-tabs" role="tablist" aria-label="研究详情" @keydown="tabKeys"><button v-for="phase in phases" :id="`tab-${phase.name}`" :key="phase.name" role="tab" :aria-controls="`panel-${phase.name}`" :aria-selected="tab === phase.name" :tabindex="tab === phase.name ? 0 : -1" :disabled="phase.name !== 'progress' && !result" :class="{ active: tab === phase.name }" @click="changeTab(phase.name)"><component :is="phase.icon" :size="16" />{{ phase.title }}<span v-if="phase.name === 'sources' && result" class="tab-count">{{ result.citations.length }}</span></button><button class="refresh-detail" aria-label="刷新研究进度" :disabled="loading" @click="refresh"><RefreshCw :size="15" :class="{ spin: loading }" /></button></div>
 
       <section v-show="tab === 'progress'" id="panel-progress" role="tabpanel" aria-labelledby="tab-progress" class="progress-panel">

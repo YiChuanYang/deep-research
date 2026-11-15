@@ -160,15 +160,18 @@ class ResearchManager:
                     run_id=run_id,
                 )
 
-            # 不把后续版本的筛选/反思检查点悄悄当作 v2 续跑。
+            # 不把其他版本的筛选/反思检查点悄悄按当前拓扑续跑。
             # 历史结果仍能查看，重新研究时应创建新的 run_id。
             if set(snapshot.info.config) - SNAPSHOT_FIELDS:
                 raise ApiError(
                     409,
                     "incompatible_workflow_version",
-                    "该研究使用后续版本流程，当前 v2 不能续跑；请用相同主题新建研究",
+                    "该研究使用不兼容的历史流程，请切回对应版本恢复或按相同主题新建研究",
                     run_id=run_id,
                 )
+
+            if snapshot.report_iteration is not None and snapshot.report_iteration.status == "blocked":
+                raise ApiError(409, "report_review_blocked", "报告迭代预算已结束且仍有实质问题；草稿已保留，请按主题新建研究", run_id=run_id)
 
             if (
                 snapshot.info.status == "running"

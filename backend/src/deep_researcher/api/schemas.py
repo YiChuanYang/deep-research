@@ -71,6 +71,19 @@ class TaskProgress(BaseModel):
     citation_count: int
 
 
+class ReportIterationProgress(BaseModel):
+    revision: int
+    max_revisions: int
+    status: str
+    stop_reason: str
+    draft_count: int
+    initial_total: int
+    initial_completed: int
+    supplemental_total: int
+    supplemental_completed: int
+    issue_count: int | None
+
+
 class RunStatusResponse(RunItem):
     execution: Literal["idle", "queued", "executing"]
 
@@ -87,6 +100,7 @@ class RunStatusResponse(RunItem):
     report_ready: bool
     requires_recovery_confirmation: bool
     error_message: str | None
+    report_iteration: ReportIterationProgress | None = None
 
 
 class TaskResultResponse(BaseModel):

@@ -81,7 +81,7 @@ def seed(state: SummaryState) -> None:
 
 
 def workflow(tmp_path: Path, bodies: list[str]) -> tuple[GraphDeepResearcher, Configuration, list[str]]:
-    config = Configuration(enable_notes=False, notes_workspace=str(tmp_path / "notes"))
+    config = Configuration(enable_report_reflection=False, enable_notes=False, notes_workspace=str(tmp_path / "notes"))
     plan_calls: list[str] = []
 
     class OfflineNodes(ResearchNodes):
@@ -185,7 +185,7 @@ def test_failed_citation_does_not_commit_and_resume_replays_past_failure(tmp_pat
 
 @pytest.mark.parametrize("reason", ["length", None, "content_filter"])
 def test_abnormal_model_finish_rolls_back_agent_history(reason: str | None) -> None:
-    config = Configuration()
+    config = Configuration(enable_report_reflection=False, )
     llm, chunks = model(config, "Incomplete body", reason)
     agent = SimpleAgent("test", llm, config=config)
     with pytest.raises(RuntimeError):
@@ -195,7 +195,7 @@ def test_abnormal_model_finish_rolls_back_agent_history(reason: str | None) -> N
 
 
 def test_reporter_callback_failure_closes_model_stream() -> None:
-    config = Configuration()
+    config = Configuration(enable_report_reflection=False, )
     llm, chunks = model(config, "Supported fact [E0001]")
     agent = SimpleAgent("test", llm, config=config)
     state = SummaryState(run_id="a" * 32)
@@ -268,7 +268,7 @@ def test_events_arrive_while_model_is_still_generating(tmp_path: Path) -> None:
     from time import monotonic, sleep
 
     release = Event()
-    config = Configuration(enable_notes=False, notes_workspace=str(tmp_path / "notes"))
+    config = Configuration(enable_report_reflection=False, enable_notes=False, notes_workspace=str(tmp_path / "notes"))
 
     class PausedStream(ChunkStream):
         def __iter__(self) -> Iterator[ChatCompletionChunk]:

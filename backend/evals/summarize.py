@@ -201,6 +201,13 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         key: stats([row.get("counts", {}).get(key) for row in rows])
         for key in ["planned_tasks", "completed_tasks", "skipped_tasks", "sources", "evidence", "report_citations"]
     }
+    iteration_counts: Counter[str] = Counter()
+    observed_iterations = 0
+    for row in rows:
+        values = (row.get("telemetry") or {}).get("report_iteration")
+        if isinstance(values, dict):
+            observed_iterations += 1
+            iteration_counts.update(values)
     return {
         "counts": counts, "rates": rates, "automatic": automatic,
         "quality": quality, "citation_quality": citation_quality,
@@ -208,6 +215,9 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
             key: evidence_counts[key] for key in ["enough", "limited", "insufficient", "uncertain"]
         },
         "efficiency": efficiency, "diagnostics": diagnostics,
+        "report_iteration": {"observed_researches": observed_iterations,
+                             "missing_researches": len(rows) - observed_iterations,
+                             "counts": dict(iteration_counts)},
     }
 
 
@@ -263,6 +273,11 @@ def markdown(summary: dict[str, Any]) -> str:
               "| 诊断数量 | 有效次数 | 均值 |", "|---|---:|---:|"]
     for name, value in summary["diagnostics"].items():
         lines.append(f"| {name} | {value['n']} | {display(value['mean'])} |")
+    iteration = summary["report_iteration"]
+    lines += ["", f"报告迭代遥测：已记录 {iteration['observed_researches']} 次研究，缺失 {iteration['missing_researches']} 次。",
+              "", "| 迭代事件 | 次数 |", "|---|---:|"]
+    lines.extend(f"| {key} | {value} |" for key, value in iteration["counts"].items())
+    lines += ["", "包含失败研究的已记录事件；模型评审完成不代表质量提升。草稿与补充任务见 report_iterations.json。"]
     lines += ["", "诊断数量较多不自动表示质量较高。", "",
               "| 题目 | 次数 | 执行 | 导出 | 人工评分 | 详情 |", "|---|---:|---|---|---|---|"]
     for row in summary["rows"]:

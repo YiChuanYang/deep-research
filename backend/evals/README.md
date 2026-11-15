@@ -1,5 +1,7 @@
 # 固定问题集评测
 
+报告级反思与定向补搜默认启用，配置、预算和数据流见 [报告迭代说明](../docs/report_iteration.md)。对照 v2 时显式设置 `ENABLE_REPORT_REFLECTION=false`；新增的 `report_iterations.json` 和 `telemetry.report_iteration` 用于诊断轮次收益，不改变人工质量评分公式。
+
 查询改写版本的配置、状态与开关对照方法见 [查询改写说明](../docs/query_rewriting.md)。
 
 这套评测用于回答：同一批研究问题上，修改后的系统是否更可靠、报告是否更完整、证据是否支持结论、耗时和调用量是否发生变化。

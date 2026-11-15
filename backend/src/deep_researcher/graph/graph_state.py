@@ -14,7 +14,13 @@ from deep_researcher.models import (
     TodoItem,
 )
 
-class ResearchGraphState(TypedDict):
+class OptionalGraphFields(TypedDict, total=False):
+    """total=False 允许旧检查点没有新增字段。"""
+
+    report_iteration: dict[str, Any]
+
+
+class ResearchGraphState(OptionalGraphFields):
     """langgraph顶层状态"""
     #图版本
     version:int
@@ -100,6 +106,7 @@ def to_output(
         sources=state.sources,
         evidence=state.evidence,
         report_citation_ids=state.report_citation_ids,
+        report_limitations=state.report_limitations,
     )
 
 

@@ -14,7 +14,7 @@ const body = ref<HTMLElement | null>(null);
 const title = computed(() => {
   if (props.interrupted || props.phase === 'failed') return '生成已暂停 · 草稿未定稿';
   if (props.phase === 'validating') return '正在校验引用';
-  if (props.phase === 'generated') return '正在保存报告';
+  if (props.phase === 'generated') return '草稿已生成 · 等待后续处理';
   return '报告生成中';
 });
 const status = computed(() => {

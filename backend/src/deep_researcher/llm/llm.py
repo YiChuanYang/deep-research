@@ -10,6 +10,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
 from deep_researcher.config import Configuration, get_config
+from deep_researcher.llm.structured import ModelOutputError
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ class MyLLM:
         response = self.client.chat.completions.create(**request)
 
         if not response.choices:
-            raise ValueError("模型响应中没有 choices")
+            raise ModelOutputError("模型响应中没有 choices")
 
         usage = getattr(response, "usage", None)
         duration = perf_counter() - started_at

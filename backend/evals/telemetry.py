@@ -26,12 +26,17 @@ class RunTelemetry(logging.Handler):
         self.usage_responses = 0
         self.reported_tokens = 0
         self.report_ttft_s: list[float] = []
+        self.report_iteration_counts: dict[str, int] = {}
 
     def emit(self, record: logging.LogRecord) -> None:
         if getattr(record, "run_id", None) != self.run_id:
             return
         event = getattr(record, "event", None)
         with self._guard:
+            if event in {"report_review_started", "report_review_completed", "report_review_protocol_invalid",
+                         "report_review_protocol_repair", "report_review_unavailable", "report_supplement_planned",
+                         "report_revision_planned", "report_adopted"}:
+                self.report_iteration_counts[event] = self.report_iteration_counts.get(event, 0) + 1
             if event in {"model_request", "model_stream_started"}:
                 self.model_requests += 1
             elif event in {"model_response", "model_stream_completed"}:
@@ -64,6 +69,7 @@ class RunTelemetry(logging.Handler):
                 "total_tokens": self.reported_tokens if complete else None,
                 "report_ttft_s": self.report_ttft_s[-1] if self.report_ttft_s else None,
                 "cost": None,
+                "report_iteration": dict(self.report_iteration_counts),
             }
 
 

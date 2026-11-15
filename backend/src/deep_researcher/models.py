@@ -85,6 +85,9 @@ class SummaryState:
     report_note_id: str | None = None
     report_note_path: str | None = None
 
+    # 正式交付的局限说明；草稿与迭代过程仍留在图检查点。
+    report_limitations: list[str] = field(default_factory=list)
+
     def get_task(self, task_id: int) -> TodoItem:
         """根据任务编号取得任务；不存在时抛出异常。"""
         for task in self.todo_items:
@@ -105,6 +108,7 @@ class SummaryStateOutput:
     evidence: dict[str, Evidence] = field(default_factory=dict)
 
     report_citation_ids: list[str] = field(default_factory=list)
+    report_limitations: list[str] = field(default_factory=list)
 
 
 @dataclass(kw_only=True, frozen=True)

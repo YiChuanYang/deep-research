@@ -1,5 +1,7 @@
 # query-rewrite-citation-v2：恢复说明与研究数据流
 
+本文记录 v2 回退时的基线。当前新增的可关闭报告反思与补充研究流程见 [报告迭代说明](report_iteration.md)；关闭 `ENABLE_REPORT_REFLECTION` 后沿用本文的主流程。
+
 ## 本次恢复到了哪里
 
 后端以 `evals/runs/20261112T142932Z-0b427b5c/source_snapshot/` 为准。该批次标签是 `query-rewrite-citation-v2`，评测记录的源码指纹为 `a79e3ad70d8c790915a52fec75ed2ea32a28c8497f144d3544441288db25da20`。

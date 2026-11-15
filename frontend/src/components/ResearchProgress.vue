@@ -23,7 +23,7 @@ const steps = ['任务规划', '检索与摘要', '报告汇总', '报告就绪'
 const stepIndex = computed(() => {
   const value = props.progress;
   if (value.report_ready) return 3;
-  if (value.next_nodes.some(node => ['report', 'save_report'].includes(node))) return 2;
+  if (value.next_nodes.some(node => ['report', 'save_report', 'reflect_report', 'prepare_report_revision', 'finalize_report', 'block_report'].includes(node))) return 2;
   return value.tasks.length ? 1 : 0;
 });
 const checkpoint = computed(() => props.progress.next_nodes.map(nodeLabel).join(' / '));
@@ -100,8 +100,8 @@ onBeforeUnmount(() => { window.clearInterval(timer); document.removeEventListene
       <div><FileText :size="17" /><span>已保存证据</span><strong :key="evidenceCount" class="metric-value">{{ evidenceCount }}</strong></div>
       <div><Link2 :size="17" /><span>任务摘要引用</span><strong :key="citationCount" class="metric-value">{{ citationCount }}</strong></div>
     </div>
-    <div class="progress-track" role="progressbar" aria-label="任务处理进度" :aria-valuenow="Math.round(percentage)" :aria-valuemin="0" :aria-valuemax="100"><span :style="{ width: `${percentage}%` }"></span></div>
-    <div class="progress-caption"><span>完成 {{ progress.completed_tasks }} · 跳过 {{ progress.skipped_tasks }}</span><span>任务处理 {{ Math.round(percentage) }}% · 不含报告生成</span></div>
+    <div v-if="!progress.report_iteration" class="progress-track" role="progressbar" aria-label="任务处理进度" :aria-valuenow="Math.round(percentage)" :aria-valuemin="0" :aria-valuemax="100"><span :style="{ width: `${percentage}%` }"></span></div>
+    <div v-if="!progress.report_iteration" class="progress-caption"><span>完成 {{ progress.completed_tasks }} · 跳过 {{ progress.skipped_tasks }}</span><span>任务处理 {{ Math.round(percentage) }}% · 不含报告生成</span></div>
 
     <div v-if="!progress.tasks.length" class="planning-empty"><LoaderCircle v-if="executing" class="spin" :size="24" /><Circle v-else :size="24" /><h3>等待研究计划</h3></div>
     <ol v-else class="task-list">

@@ -134,7 +134,7 @@ def offline_factory(*, config: Configuration, data_dir: Path) -> GraphDeepResear
 
 
 def run_offline(dataset_path: Path, tmp_path: Path, **kwargs) -> Path:
-    config = Configuration(
+    config = Configuration(enable_report_reflection=False,
         llm_provider="offline", llm_model_id="offline", llm_base_url="https://example.invalid/v1",
         llm_api_key="offline-test-secret", search_api="duckduckgo", enable_notes=False,
     )

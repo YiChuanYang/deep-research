@@ -40,6 +40,8 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "services.query_rewriter": ("🔧", "services.query"),
     "services.summarizer": ("🧠", "services.summarizer"),
     "services.reporter": ("📝", "services.reporter"),
+    "services.report_reflection": ("🪞", "services.review"),
+    "graph.report_cycle": ("🔄", "graph.report_cycle"),
     "services.note_service": ("📒", "services.note"),
     "services.tool_events": ("🪝", "listeners.tools"),
     "agents.simple_agent": ("🤖", "agents.simple"),
@@ -278,6 +280,13 @@ class ConsoleFormatter(logging.Formatter):
         task_id = getattr(record, "task_id", None)
         task = f"T{task_id:02d}" if type(task_id) is int else str(task_id or "—")
         stage = str(getattr(record, "stage", None) or "—")
+        # 控制台使用短中文；JSON 日志仍保留原节点名称，便于程序统计。
+        stage = {
+            "reflect_report": "报告反思",
+            "prepare_report_revision": "安排改进",
+            "finalize_report": "报告定稿",
+            "block_report": "停止交付",
+        }.get(stage, stage)
         message = " ↵ ".join(_clean_message(record.getMessage()).splitlines())
         display_icon = icon if self.emoji else "-"
         label = f"{_pad_display(display_icon, 2)} {component:<21}"

@@ -30,6 +30,10 @@ SNAPSHOT_FIELDS = {
     "search_timeout",
     "search_max_results",
     "enable_query_rewrite",
+    "enable_report_reflection",
+    "report_max_revisions",
+    "report_max_supplement_tasks",
+    "report_review_max_chars",
     "fetch_full_page",
     "max_tokens_per_source",
     "enable_notes",
@@ -74,6 +78,11 @@ class Configuration(BaseModel):
     search_max_results: int = Field(default=5, ge=1, le=20)
     # 仅控制搜索前的查询改写，搜索次数和结果数仍由原逻辑决定。
     enable_query_rewrite: bool = True
+    # revision=0 是初稿；两次额外改进最多生成三版报告。
+    enable_report_reflection: bool = True
+    report_max_revisions: int = Field(default=2, ge=0, le=3)
+    report_max_supplement_tasks: int = Field(default=2, ge=0, le=3)
+    report_review_max_chars: int = Field(default=60000, ge=1000, le=200000)
     tavily_api_key: SecretStr | None = Field(default=None, repr=False)
 
     fetch_full_page: bool = False
@@ -191,6 +200,8 @@ class Configuration(BaseModel):
         # 新研究在 snapshot() 中保存开关，恢复时不受当前环境开关影响。
         saved = dict(snapshot)
         saved.setdefault("enable_query_rewrite", False)
+        # 旧检查点沿用原拓扑；不能在恢复时突然插入报告循环。
+        saved.setdefault("enable_report_reflection", False)
         restored = type(self).model_validate({
             **self.model_dump(),
             **saved,
