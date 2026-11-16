@@ -116,7 +116,7 @@ class PlanningService:
             )
             self._agent.run(
                 input_text=prompt,
-                tool_choice="required"
+                tool_choice="auto" if self._agent.config.llm_provider == "zhipu" else "required"
             )
         except Exception as exc:
             logger.debug(

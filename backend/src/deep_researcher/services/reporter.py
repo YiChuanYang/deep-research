@@ -40,6 +40,7 @@ class ReportingService:
         include_references: bool = True,
         previous_report: str | None = None,
         feedback: str | None = None,
+        supplement_task_ids: list[int] | None = None,
     ) -> CitedText:
         started_at = perf_counter()
 
@@ -70,13 +71,13 @@ class ReportingService:
                 task.summary or "",
                 task.evidence_ids,
             )
-            allowed.extend(ids)
+            allowed.extend(task.evidence_ids if task.retrieval else ids)
 
         allowed = list(dict.fromkeys(allowed))
 
         task_summaries = "\n\n".join(
             f"## 任务 {task.id}：{task.title}\n"
-            f"{task.summary}"
+            f"任务要求：{task.intent}\n{task.summary}\n资料限制：{'；'.join(task.notices) or '无'}"
             for task in tasks
         )
 
@@ -90,13 +91,38 @@ class ReportingService:
                 allowed,
             ),
         )
+        prompt += (
+            "\n逐项回应原始研究要求，围绕问题组织结论，不按任务摘要机械拼接。"
+            "涉及工程设计时写清步骤顺序、事务或状态边界、失败窗口、重试副作用和验证办法。"
+            "摘要可能遗漏重要内容，应再次核对本次提供的证据；保留条件、否定和版本。"
+            "用户给定的假设是分析前提，不得用无关真实产品替换，也不要给题设数字挂外部引用。"
+            "材料不足的要求明确写出未知，不能用相关主题的背景介绍代替回答。"
+        )
         if previous_report:
+            supplements = [state.get_task(task_id) for task_id in supplement_task_ids or []]
+            # 本轮材料单独标明，避免它淹没在旧摘要中；不要求为凑新增引用而采用。
+            changes = [
+                {
+                    "task_id": task.id,
+                    "question": task.title,
+                    "status": task.status,
+                    "summary": task.summary if task.status == "completed" else None,
+                    "evidence_ids": task.citation_ids if task.status == "completed" else [],
+                    "notices": task.notices,
+                }
+                for task in supplements
+            ]
             prompt += (
                 "\n下面是待修订的报告草稿，不是已证实的事实。结合全部任务材料与反馈输出完整的新正文。"
                 "保留仍被证据支持的有效内容；无法支持的结论应删除或缩小范围。不得把补搜失败写成证据支持。\n"
                 "P 编号与反馈的 paragraph_id 一一对应，只用于定位，不要写进新正文。\n"
                 + json.dumps(report_paragraphs(previous_report), ensure_ascii=False)
                 + "\n需要处理的反馈：\n" + (feedback or "无")
+                + "\n本轮补充研究结果：\n" + json.dumps(changes, ensure_ascii=False)
+                + "\n逐项核对反馈和原文，误报不必照做。用补充证据回答真正未解决的问题；"
+                "已有材料足够时直接修正。保留仍有依据的内容，不能仅更改空行或照抄原稿。"
+                "若补充任务无有效结果或新材料仍不足，明确写出具体未知，不编造结论。"
+                "新引用只在支持新内容时使用，不能用堆引用冒充修订。只输出完整报告正文。"
             )
 
         logger.info(

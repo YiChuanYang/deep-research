@@ -209,6 +209,7 @@ class SearchTool(Tool):
                 "title": title,
                 "content": content,
                 "raw_content": entry.get("raw_content") or "",
+                "score": entry.get("score"),
             })
 
         return results, notices

@@ -246,6 +246,8 @@ class EvidenceService:
                 "retrieved_at": item.retrieved_at,
                 "truncated": item.truncated,
                 "text": item.text,
+                "section": item.section,
+                "snapshot_id": item.snapshot_id,
             })
 
         if not rows:
@@ -434,6 +436,8 @@ class EvidenceService:
                 f"  - 取得时间：{item.retrieved_at}；"
                 f"材料类型：{item.kind}\n"
                 f"  - 片段预览：{self._plain(preview)}"
+                + (f"\n  - 正文位置：{self._plain(item.section)}；字符 {item.start}–{item.end}"
+                   if item.snapshot_id else "")
             )
 
         return "\n\n".join(blocks) or "无引用证据"

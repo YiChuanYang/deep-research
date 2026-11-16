@@ -1,6 +1,10 @@
 # 固定问题集评测
 
+Web RAG 的阶段、配置、快照与降级行为见 [Web RAG 说明](../docs/web_rag.md)。
+
 报告级反思与定向补搜默认启用，配置、预算和数据流见 [报告迭代说明](../docs/report_iteration.md)。对照 v2 时显式设置 `ENABLE_REPORT_REFLECTION=false`；新增的 `report_iterations.json` 和 `telemetry.report_iteration` 用于诊断轮次收益，不改变人工质量评分公式。
+
+若只检查反思对同一初稿的增量，可运行 `python -m evals.report_cycle_probe <fixture或snapshot.json> ...`。它复用初始正文和材料，补搜仍联网；不是全链路 A/B，也不会自动生成质量分。示例和局限见 [边界修复与对照记录](../docs/report_iteration_fixes.md)。
 
 查询改写版本的配置、状态与开关对照方法见 [查询改写说明](../docs/query_rewriting.md)。
 

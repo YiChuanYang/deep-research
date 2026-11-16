@@ -97,7 +97,7 @@ def workflow(
     **options: Any,
 ) -> tuple[GraphDeepResearcher, Counter[str]]:
     calls: Counter[str] = Counter()
-    cfg = Configuration(
+    cfg = Configuration(enable_web_rag=False, review_output_mode="tool",
         enable_notes=False,
         enable_query_rewrite=False,
         search_api=SearchAPI.DUCKDUCKGO,
@@ -378,7 +378,7 @@ def test_unchanged_report_does_not_loop(
 
 
 def test_config_keeps_old_runs_on_v2() -> None:
-    cfg = Configuration()
+    cfg = Configuration(enable_web_rag=False, review_output_mode="tool", )
     assert cfg.enable_report_reflection
     assert not cfg.for_resume({}).enable_report_reflection
     assert cfg.for_resume(cfg.snapshot()).report_max_revisions == 2
@@ -436,7 +436,7 @@ def test_service_does_not_truncate_over_budget_materials_and_fake_review() -> No
     state.evidence["E0001"] = replace(state.evidence["E0001"], text="material " * 2000)
     model = Model([PASS])
     service = ReportReflectionService(
-        cast(MyLLM, model), Configuration(report_review_max_chars=1000)
+        cast(MyLLM, model), Configuration(enable_web_rag=False, review_output_mode="tool", report_review_max_chars=1000)
     )
     outcome = service.review(
         state, ReportDraft(revision=0, text=BODY), allow_repair=True
@@ -475,7 +475,7 @@ def test_review_sees_completed_task_evidence_not_yet_used_in_report() -> None:
             }
         ]
     )
-    outcome = ReportReflectionService(cast(MyLLM, model), Configuration()).review(
+    outcome = ReportReflectionService(cast(MyLLM, model), Configuration(enable_web_rag=False, review_output_mode="tool", )).review(
         state, ReportDraft(revision=0, text=BODY), allow_repair=True
     )
     payload = json.loads(model.requests[0]["messages"][1]["content"])
@@ -487,7 +487,7 @@ def test_report_revision_receives_same_paragraph_anchors_as_review() -> None:
     state = SummaryState()
     seed(state)
     model = Model([BAD])
-    review = ReportReflectionService(cast(MyLLM, model), Configuration()).review(
+    review = ReportReflectionService(cast(MyLLM, model), Configuration(enable_web_rag=False, review_output_mode="tool", )).review(
         state,
         ReportDraft(revision=0, text=BODY),
         allow_repair=True,
@@ -523,6 +523,25 @@ class Model:
         value = self.values.pop(0)
         if isinstance(value, Exception):
             raise value
+        if isinstance(value, dict) and "issues" in value:
+            # 图测试使用内部持久化格式，模型桩则发出新版的两组结果协议。
+            revisions, gaps = [], []
+            for item in value["issues"]:
+                if item["kind"] == "missing_evidence":
+                    gaps.append(
+                        {
+                            "topic_quote": json.loads(kwargs["messages"][1]["content"])[
+                                "topic"
+                            ],
+                            **{
+                                key: item[key]
+                                for key in ("reason", "question", "query")
+                            },
+                        }
+                    )
+                else:
+                    revisions.append({"paragraph_id": "", "evidence_ids": [], **item})
+            value = {"revisions": revisions, "research_gaps": gaps}
         text = value if isinstance(value, str) else json.dumps(value)
         message: dict[str, Any] = {"role": "assistant", "content": text}
         if self.tool:
@@ -557,11 +576,11 @@ class Model:
 def test_review_service_validates_native_and_text_output_without_mutating_state(
     tool: bool,
 ) -> None:
-    state = SummaryState()
+    state = SummaryState(research_topic="test research topic")
     seed(state)
     before = asdict(state)
     model = Model([gap()], tool=tool)
-    outcome = ReportReflectionService(cast(MyLLM, model), Configuration()).review(
+    outcome = ReportReflectionService(cast(MyLLM, model), Configuration(enable_web_rag=False, review_output_mode="tool", )).review(
         state,
         ReportDraft(revision=0, text=BODY, citation_ids=["E0001"]),
         allow_repair=True,
@@ -569,12 +588,13 @@ def test_review_service_validates_native_and_text_output_without_mutating_state(
     assert (
         outcome.review.issues[0].kind == "missing_evidence" and asdict(state) == before
     )
-    assert model.requests[0]["tool_choice"] == "required"
+    assert model.requests[0]["tool_choice"] == "auto"
     schema = model.requests[0]["tools"][0]["function"]["parameters"]
     # 当前提供商不会可靠解析嵌套 $ref；实际发出的参数结构必须展开。
     assert "$defs" not in schema and "$ref" not in json.dumps(schema)
-    issue_schema = schema["properties"]["issues"]["items"]
-    assert set(issue_schema["required"]) == set(issue_schema["properties"])
+    for group in ("revisions", "research_gaps"):
+        item_schema = schema["properties"][group]["items"]
+        assert set(item_schema["required"]) == set(item_schema["properties"])
 
 
 @pytest.mark.parametrize(
@@ -589,7 +609,7 @@ def test_protocol_repair_budget_is_explicit(bad: Any) -> None:
     state = SummaryState()
     seed(state)
     model = Model([bad, PASS])
-    service = ReportReflectionService(cast(MyLLM, model), Configuration())
+    service = ReportReflectionService(cast(MyLLM, model), Configuration(enable_web_rag=False, review_output_mode="tool", ))
     result = service.review(
         state,
         ReportDraft(revision=0, text=BODY, citation_ids=["E0001"]),
@@ -627,7 +647,7 @@ def test_review_transient_error_is_unavailable_but_auth_and_program_errors_raise
     ]
     for error in errors:
         model = Model([error])
-        service = ReportReflectionService(cast(MyLLM, model), Configuration())
+        service = ReportReflectionService(cast(MyLLM, model), Configuration(enable_web_rag=False, review_output_mode="tool", ))
         if isinstance(error, RateLimitError):
             assert (
                 service.review(

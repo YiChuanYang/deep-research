@@ -101,7 +101,7 @@ function tabKeys(event: KeyboardEvent): void {
     <div v-else-if="loading" class="detail-skeleton" aria-label="正在读取研究"><span></span><span></span><span></span></div>
     <div v-else class="planning-empty"><FileText :size="30" /><h2>暂时无法显示这项研究</h2><p>可以重新读取，或从左侧选择其他研究。</p><button class="button" @click="refresh">重新读取</button></div>
     <p v-if="copied" class="sr-only" role="status">已复制到剪贴板</p>
-    <EvidenceDrawer :evidence="selectedEvidence" @close="selectedEvidence = null" />
+    <EvidenceDrawer :evidence="selectedEvidence" :run-id="runId" @close="selectedEvidence = null" />
     <dialog ref="confirmDialog" class="confirm-dialog" aria-labelledby="recovery-title"><div class="confirm-content"><TriangleAlert :size="25" /><h2 id="recovery-title">确认后继续研究</h2><p>上次执行未正常结束。请确认旧的执行进程已经停止，再从保存的进度继续。</p><div class="actions"><button class="button" @click="confirmDialog?.close()">暂不恢复</button><button class="button primary" :disabled="resuming" @click="resume(true)">确认已停止，继续</button></div></div></dialog>
   </div>
 </template>

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -69,6 +69,8 @@ class TaskProgress(BaseModel):
     selected: bool
     evidence_count: int
     citation_count: int
+    retrieval: dict[str, Any] = Field(default_factory=dict)
+    notices: list[str] = Field(default_factory=list)
 
 
 class ReportIterationProgress(BaseModel):
@@ -116,6 +118,14 @@ class CitationResponse(BaseModel):
     title: str
     url: str
     text: str
+    snapshot_id: str | None = None
+    section: str = ""
+    start: int | None = None
+    end: int | None = None
+    retrieved_at: str = ""
+    kind: str = "search_snippet"
+    truncated: bool = False
+    content_hash: str | None = None
 
 
 class ResearchResultResponse(BaseModel):

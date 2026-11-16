@@ -176,11 +176,8 @@ def inspect_state(state: SummaryState) -> dict[str, Any]:
             }
         )
 
-        # Reporter 当前使用“已完成摘要中出现的引用”
-        # 作为报告允许引用范围。
-        for citation_id in CITATION.findall(
-            task.summary or ""
-        ):
+        # Web RAG 使用选中证据包；旧研究保留摘要引用范围。
+        for citation_id in (task.evidence_ids if task.retrieval else CITATION.findall(task.summary or "")):
             if ID_PATTERN.fullmatch(citation_id):
                 allowed_report_ids.append(citation_id)
 

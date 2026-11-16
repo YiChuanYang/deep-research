@@ -38,10 +38,10 @@ plan → select_task → rewrite_query → search → summarize → save_note
 1. 初始任务完成后，Reporter 返回引用已校验的 `CitedText`。本功能开启时返回纯正文，正式引用附录等到定稿才添加。
 2. `report` 节点把正文、实际引用和 revision 保存进图的 `report_iteration.drafts`。此时 `SummaryState.structured_report` 仍为空。
 3. 评审服务把正文按空行切成有稳定 P 编号的段落。输入包括主题、所有任务的目标和状态、已完成摘要，以及这些摘要实际引用的证据。这样可以发现“已有研究结果没写进报告”。
-4. 模型只返回 `issues`，最多三项。`missing_evidence` 必须带 question 和单条 query；`omission` 表示已有材料被漏写；`unsupported`、`contradiction` 表示必须处理的实质问题。具体报告问题需要有效段落编号，证据编号必须来自本次输入。
+4. 模型返回 `revisions`（最多两项）和 `research_gaps`（最多一项）。程序将它们转换为原来的 `issues` 持久化结构。`revisions` 只有问题类型、说明、段落编号和证据编号；`research_gaps` 包含说明、原问题片段 `topic_quote`、领域研究问题和查询。原问题片段必须能在用户主题中逐字找到；两种动作的参数不能混填。
 5. `reflect_report` 将结果绑定到这版草稿，提交检查点。普通语义评审和协议修复是两种预算，分别保存。
-6. `prepare_report_revision` 对缺口和查询去重，分配新的任务编号，创建普通 `TodoItem`，同时记录它对应的问题和轮次。每轮最多追加一个任务。
-7. 新任务继续走现有任务链。它获得的新 E 编号进入全研究累计证据目录；原任务、原证据和原编号保留。
+6. `prepare_report_revision` 对缺口和查询去重，检查明显的“报告是否提及”自评问题，分配新任务编号。任务目标只包含研究问题；评审理由保留在迭代审计中，不作为摘要的事实前提。每轮最多追加一个任务。查询改写和搜索入口也执行边界检查，覆盖直接恢复到搜索的情况。
+7. 新任务继续走现有任务链。它获得的新 E 编号进入全研究累计证据目录；原任务、原证据和原编号保留。补充摘要只接收领域问题与编号证据；返回明确的报告自评语句时整段拒绝，转为资料不足并跳过该任务，不进入报告引用范围。
 8. 补充摘要完成后，Reporter 输入全部已完成摘要、对应证据、上一版报告和反馈，生成完整的新正文。新材料只有进入已完成摘要的引用范围后才可用于报告。
    评审和修订共用 `report_paragraphs()` 生成的段落字典，例如 `{"P0002": "原报告的某一段"}`。这样反馈中的 `paragraph_id` 能定位回原文；P 编号不会要求模型写进正式报告。
 9. 新草稿再评审。达到交付条件后，`finalize_report` 写正式报告与复核说明，`save_report` 保存笔记后设置图顶层 `finished=True`。
@@ -81,7 +81,7 @@ plan → select_task → rewrite_query → search → summarize → save_note
 
 所有候选报告先通过引用编号和范围校验。鉴权错误、未知程序错误、数据库与笔记写入失败不被当作语义问题吞掉。
 
-同一份正文再次生成时复用其已绑定的评审并停止重复循环。跨任务新材料判断使用空白归一化后的文本 SHA-256：即使 URL、查询和 E 编号改变，相同文本也不算新内容。它不是语义去重，改写过的相似文本仍可能被视为新材料。
+同一份正文再次生成时复用其已绑定的评审并停止重复循环。`comparable_report()` 忽略代码围栏外的空行和行尾空格，保留行内空格、换行顺序、缩进及围栏内代码；不删除全部空白后比较。复用反馈会记录 `review_reused_from`，前端标明来源版本，因为空行变化可能改变 P 编号。跨任务新材料判断仍使用空白归一化后的文本 SHA-256；这不是语义去重。
 
 一次补搜没有取得内容不同的新材料后，不再继续补搜，但仍允许在剩余预算内利用已有材料修订。原查询和改写后的实际查询都会检查重复。
 
@@ -126,7 +126,7 @@ uv run python -m demo.demo_report_iteration --topic "你的主题" --max-tasks 2
 离线主线回归：
 
 ```powershell
-uv run python -m pytest tests/test_report_iteration.py tests/test_query_rewriting.py tests/test_citation_normalization.py tests/test_streaming.py tests/test_evals.py tests/test_v2_rollback.py tests/test_utils.py tests/test_tools -q
+uv run python -m pytest tests/test_report_boundaries.py tests/test_report_iteration.py tests/test_query_rewriting.py tests/test_citation_normalization.py tests/test_streaming.py tests/test_evals.py tests/test_v2_rollback.py tests/test_utils.py tests/test_tools -q
 ```
 
 原有手写工作流的日志/笔记测试仍有历史接口不兼容；不要将以上主线回归表述为全仓库 pytest 通过。
@@ -148,15 +148,15 @@ uv run python -m pytest tests/test_report_iteration.py tests/test_query_rewritin
 
 主线回归为 97 项，其中新增报告循环测试 23 项；前端 25 项端到端测试及生产构建通过。测试覆盖补搜后再次评审、两轮补搜预算、纯修订、旧材料保留、失败恢复、评审协议修复、实质问题阻断、前端记录展示和流式草稿替换。
 
-## 已知问题与下一阶段验收
+## 已记录问题与边界修复
 
-后续高光谱分类研究 `67669d9717bd49a694eee4a6cd367350` 完成三个初始任务、一个补充任务，保留 20 条证据，最终以 `unreviewed` 交付。它暴露了以下尚未修复的问题：
+后续高光谱分类研究 `67669d9717bd49a694eee4a6cd367350` 完成三个初始任务、一个补充任务，保留 20 条证据，最终以 `unreviewed` 交付。它暴露了以下问题（下面描述故障时的旧行为）：
 
 - 评审将正文已包含的 FCN 内容判为遗漏；反馈的语义正确性没有得到保证。
 - `question` 可以是“报告是否提及某内容”，随后被直接转为网络研究任务。补充摘要把反馈照抄为结论并附上外部证据编号，引用结构校验无法识别这种语义错配。
 - 两版正文只相差六个换行符。当前 `.strip()` 比较只忽略首尾空白，漏掉了正文内部空行变化，未能停止无实质进展的修订。
 - 第二版评审同时返回 `omission` 和补搜参数，一次协议修复后仍不合法。程序按现有规则标注未复核，不表示质量通过。
 
-下一阶段以这个案例建立离线回归，再修正反馈到补充任务的转换、摘要输入边界和无实质变化检测，同时完善评审结果协议。验收要求：补充任务必须询问可从外部资料回答的领域事实；摘要不能把评审意见当证据；单纯空行变化不继续触发评审；错误协议不能被当作评审通过。之后使用固定题目对照开启/关闭反思的报告质量和调用成本。
+现已将两版正文、原始模型反馈、初始材料和补充摘要冻结在 `tests/fixtures/report_cycle_hyperspectral.json`。边界修复与验证结果见 [报告反思修复记录](report_iteration_fixes.md)。原历史研究不改写，新建研究使用修复后的逻辑。
 
-当前历史评测中的质量评分由 Codex（AI 单评审）填写，不能表述为独立人工验证。该报告反思版本尚未完成整批质量对照评测。
+当前历史评测中的质量评分由 Codex（AI 单评审）填写，不能表述为独立人工验证。新增三题冻结初稿对照用于诊断增量，仍不等于整批独立质量评测。

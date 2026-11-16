@@ -35,7 +35,7 @@ class ScriptedLLM:
     llm_provider = "offline"
 
     def __init__(self, response: str | BaseException) -> None:
-        self.config = Configuration(enable_report_reflection=False, )
+        self.config = Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, )
         self.response = response
         self.requests: list[dict[str, Any]] = []
 
@@ -81,7 +81,7 @@ def test_rewrite_passes_context_in_one_call_without_state_mutation(
     agent = agent_for(llm)
     before = asdict(state)
     with caplog.at_level(logging.INFO):
-        query = QueryRewriteService(lambda: agent, Configuration(enable_report_reflection=False, )).rewrite_task(state, 1)
+        query = QueryRewriteService(lambda: agent, Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, )).rewrite_task(state, 1)
     assert query == REWRITTEN
     assert len(llm.requests) == 1
     request = llm.requests[0]
@@ -112,7 +112,7 @@ def test_invalid_or_failed_rewrite_falls_back(
     llm = ScriptedLLM(response)
     agent = agent_for(llm)
     with caplog.at_level(logging.WARNING):
-        assert QueryRewriteService(lambda: agent, Configuration(enable_report_reflection=False, )).rewrite_task(state, 1) == ORIGINAL
+        assert QueryRewriteService(lambda: agent, Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, )).rewrite_task(state, 1) == ORIGINAL
     assert len(llm.requests) == 1
     assert agent.get_hsitory() == []
     assert state.get_task(1).search_query is None
@@ -123,25 +123,25 @@ def test_disabled_and_saved_query_do_not_create_agent(state: SummaryState) -> No
     def forbidden() -> SimpleAgent:
         raise AssertionError("不应创建模型")
 
-    service = QueryRewriteService(forbidden, Configuration(enable_report_reflection=False, enable_query_rewrite=False))
+    service = QueryRewriteService(forbidden, Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, enable_query_rewrite=False))
     assert service.rewrite_task(state, 1) == ORIGINAL
     state.get_task(1).search_query = REWRITTEN
-    assert QueryRewriteService(forbidden, Configuration(enable_report_reflection=False, )).rewrite_task(state, 1) == REWRITTEN
+    assert QueryRewriteService(forbidden, Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, )).rewrite_task(state, 1) == REWRITTEN
 
 
 def test_interrupt_is_not_converted_to_fallback(state: SummaryState) -> None:
     agent = agent_for(ScriptedLLM(KeyboardInterrupt()))
     with pytest.raises(KeyboardInterrupt):
-        QueryRewriteService(lambda: agent, Configuration(enable_report_reflection=False, )).rewrite_task(state, 1)
+        QueryRewriteService(lambda: agent, Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, )).rewrite_task(state, 1)
     assert agent.get_hsitory() == []
 
 
 def test_config_snapshot_and_old_checkpoint_compatibility(state: SummaryState) -> None:
-    enabled = Configuration(enable_report_reflection=False, )
+    enabled = Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, )
     assert enabled.enable_query_rewrite
     snapshot = enabled.snapshot()
     assert snapshot["enable_query_rewrite"] is True
-    assert Configuration(enable_report_reflection=False, enable_query_rewrite=False).for_resume(snapshot).enable_query_rewrite
+    assert Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, enable_query_rewrite=False).for_resume(snapshot).enable_query_rewrite
     snapshot.pop("enable_query_rewrite")
     assert not enabled.for_resume(snapshot).enable_query_rewrite
     assert not Configuration.from_env({"enable_query_rewrite": False}, env_file=None).enable_query_rewrite
@@ -171,7 +171,7 @@ class RecordingSearch:
 
 
 def test_search_summary_and_note_use_actual_query(state: SummaryState, tmp_path: Path) -> None:
-    config = Configuration(enable_report_reflection=False, search_api=SearchAPI.DUCKDUCKGO, notes_workspace=str(tmp_path))
+    config = Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, search_api=SearchAPI.DUCKDUCKGO, notes_workspace=str(tmp_path))
     state.get_task(1).search_query = REWRITTEN
     tool = RecordingSearch()
     service = SearchService(config, search_tool=cast(SearchTool, tool))
@@ -206,7 +206,7 @@ def test_checkpoint_reuses_rewritten_or_fallback_query_after_search_failure(
     state: SummaryState, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     response: str | BaseException,
 ) -> None:
-    config = Configuration(enable_report_reflection=False, search_api=SearchAPI.DUCKDUCKGO, enable_notes=False)
+    config = Configuration(enable_web_rag=False, review_output_mode="tool", enable_report_reflection=False, search_api=SearchAPI.DUCKDUCKGO, enable_notes=False)
     tool = RecordingSearch(fail_first=True)
     query_models: list[ScriptedLLM] = []
 

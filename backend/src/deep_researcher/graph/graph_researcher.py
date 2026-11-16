@@ -542,6 +542,18 @@ class GraphDeepResearcher:
 
               self._events.delete_run(run_id)
 
+              # 只删除由已校验 run_id 定位的本研究资料文件；模型缓存不属于研究产物。
+              rag_workspace = info.config.get("web_rag_workspace")
+              if rag_workspace:
+                  root = Path(rag_workspace).resolve()
+                  directory = (root / run_id).resolve()
+                  if directory.parent != root:
+                      raise ValueError("网页资料目录越界")
+                  corpus = directory / "corpus.sqlite3"
+                  corpus.unlink(missing_ok=True)
+                  if directory.is_dir() and not any(directory.iterdir()):
+                      directory.rmdir()
+
               # 最后删除元数据；失败重试还需要其中的配置。
               repository.purge_deleted(run_id)
 

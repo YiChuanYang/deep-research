@@ -44,6 +44,7 @@ function toggle(event: Event): void {
         <p v-if="!detail.iteration.drafts.length">尚未生成报告草稿。</p>
         <article v-for="draft in detail.iteration.drafts" :key="draft.revision" class="iteration-draft">
           <h3>第 {{ draft.revision + 1 }} 版草稿</h3>
+          <p v-if="draft.review_reused_from != null">正文无实质变化，沿用第 {{ draft.review_reused_from + 1 }} 版反馈，未再次评审。</p>
           <p v-if="draft.review_error">未完成复核：{{ draft.review_error }}</p>
           <p v-else-if="draft.review && !draft.review.issues.length">本次模型评审未提出问题。</p>
           <ul v-if="draft.review?.issues.length"><li v-for="(issue, index) in draft.review.issues" :key="index">{{ issue.reason }}<span v-if="issue.question"> · 补充问题：{{ issue.question }}</span></li></ul>

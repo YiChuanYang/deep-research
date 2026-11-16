@@ -4,6 +4,11 @@ export const runLabels: Record<RunStatus, string> = { pending: '待执行', runn
 export const taskLabels: Record<TaskStatus, string> = { pending: '待处理', running: '处理中', completed: '已完成', skipped: '已跳过' };
 const nodeLabels: Record<string, string> = { plan: '规划研究', select_task: '选择任务', rewrite_query: '改写搜索词', search: '检索资料', summarize: '生成摘要', save_note: '保存任务结果', report: '汇总报告', save_report: '保存报告' };
 Object.assign(nodeLabels, {
+  discover_sources: '发现网页来源',
+  read_sources: '读取网页正文',
+  index_documents: '建立资料索引',
+  retrieve_evidence: '检索与选择证据',
+  lookup_corpus: '检索已有资料',
   reflect_report: '核对报告',
   prepare_report_revision: '安排报告改进',
   finalize_report: '定稿与引用整理',

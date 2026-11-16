@@ -8,12 +8,16 @@ from time import perf_counter
 
 from deep_researcher.agents.simple_agent import SimpleAgent
 from deep_researcher.config import Configuration
+from deep_researcher.llm.structured import ModelOutputError
 from deep_researcher.logging_config import log_operation
 from deep_researcher.models import CitedText, SummaryState
 from deep_researcher.prompts import summarizer_running_prompt
 from deep_researcher.services.evidence_service import EvidenceService
+from deep_researcher.services.research_constraints import (
+    is_report_judgement,
+    validate_research_question,
+)
 from deep_researcher.utils import strip_thinking_tokens
-
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +43,22 @@ class SummarizationService:
         self,
         state: SummaryState,
         task_id: int,
+        *,
+        research_question: str | None = None,
     ) -> CitedText:
         started_at = perf_counter()
         task = state.get_task(task_id)
         evidence_service = EvidenceService()
+        if research_question is not None:
+            try:
+                validate_research_question(research_question, task.effective_query)
+            except ModelOutputError as exc:
+                logger.warning(
+                    "补充摘要未采用 · %s",
+                    exc,
+                    extra={"event": "supplement_summary_rejected"},
+                )
+                return CitedText(text="暂无可用信息")
 
         context = evidence_service.context(
             state,
@@ -50,16 +66,25 @@ class SummarizationService:
         )
 
         if not context.strip():
-            raise ValueError(
-                f"任务 {task_id} 没有可用证据"
-            )
+            raise ValueError(f"任务 {task_id} 没有可用证据")
 
         prompt = summarizer_running_prompt.format(
             research_topic=state.research_topic,
-            title=task.title,
-            intent=task.intent,
+            # 补充任务不注入旧检查点中可能包含的评审 reason/title/intent。
+            title=research_question if research_question is not None else task.title,
+            intent=(
+                "从下面的外部证据回答研究问题；不要评价报告是否写过某内容。"
+                if research_question is not None
+                else task.intent
+            ),
             query=task.effective_query,
             context=context,
+        )
+        prompt += (
+            "\n优先回答当前任务目标，保留原文的对象、版本、条件与否定词。"
+            "工程问题必须保留关键操作顺序、提交边界、失败窗口与恢复机制，不能只列术语。"
+            "假设案例中的数字和条件来自用户，不得把它们归给外部来源。"
+            "当前资料限制：" + "；".join(task.notices)
         )
 
         logger.info(
@@ -91,6 +116,17 @@ class SummarizationService:
 
         if not summary:
             raise ValueError("总结结果为空")
+
+        if research_question is not None and is_report_judgement(summary):
+            # 外部材料无法证明当前草稿有没有写；整段拒绝，不删除坏句后继续拼报告。
+            logger.warning(
+                "补充摘要未采用 · 返回了对报告的评价，不能作为外部研究结论",
+                extra={
+                    "event": "supplement_summary_rejected",
+                    "response_text": summary,
+                },
+            )
+            return CitedText(text="暂无可用信息")
 
         # 固定的资料不足响应仍然允许没有引用。
         empty_marker = summary.strip("「」“”\"'。.!！")

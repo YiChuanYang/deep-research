@@ -35,6 +35,8 @@ class TodoItem:
     # query 保留规划原文；search_query 保存搜索前确定的实际查询。
     # None 表示尚未确定，旧检查点缺少此字段时也使用这个默认值。
     search_query: str | None = None
+    # 仅保存检索摘要；全文、候选块和向量由 WebRagStore 管理。
+    retrieval: dict[str, object] = field(default_factory=dict)
 
     @property
     def effective_query(self) -> str:
@@ -66,6 +68,12 @@ class Evidence:
     kind: Literal["search_snippet", "page_excerpt"]
 
     truncated: bool = False
+    snapshot_id: str | None = None
+    chunk_id: str | None = None
+    section: str = ""
+    start: int | None = None
+    end: int | None = None
+    content_hash: str | None = None
 
 @dataclass(kw_only=True)
 class SummaryState:

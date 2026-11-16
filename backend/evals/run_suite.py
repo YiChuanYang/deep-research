@@ -88,6 +88,7 @@ def run_suite(
     base = config if config is not None else Configuration.from_env()
     effective = Configuration.model_validate({
         **base.model_dump(), "notes_workspace": str(batch / "notes"),
+        "web_rag_workspace": str(batch / "web_rag"),
     })
     effective.require_llm()
     effective.require_search()

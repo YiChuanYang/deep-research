@@ -27,15 +27,19 @@ class RunTelemetry(logging.Handler):
         self.reported_tokens = 0
         self.report_ttft_s: list[float] = []
         self.report_iteration_counts: dict[str, int] = {}
+        self.web_rag_counts: dict[str, int] = {}
 
     def emit(self, record: logging.LogRecord) -> None:
         if getattr(record, "run_id", None) != self.run_id:
             return
         event = getattr(record, "event", None)
         with self._guard:
+            if isinstance(event, str) and (event.startswith("web_") or event == "embedding_completed"):
+                self.web_rag_counts[event] = self.web_rag_counts.get(event, 0) + 1
             if event in {"report_review_started", "report_review_completed", "report_review_protocol_invalid",
                          "report_review_protocol_repair", "report_review_unavailable", "report_supplement_planned",
-                         "report_revision_planned", "report_adopted"}:
+                         "report_revision_planned", "report_adopted", "report_gap_rejected",
+                         "report_revision_unchanged", "supplement_summary_rejected"}:
                 self.report_iteration_counts[event] = self.report_iteration_counts.get(event, 0) + 1
             if event in {"model_request", "model_stream_started"}:
                 self.model_requests += 1
@@ -48,9 +52,9 @@ class RunTelemetry(logging.Handler):
                 ttft = getattr(record, "ttft_s", None)
                 if type(ttft) in {int, float} and math.isfinite(ttft) and ttft >= 0:
                     self.report_ttft_s.append(float(ttft))
-            elif event == "search_started":
+            elif event in {"search_started", "web_discovery_started"}:
                 self.search_requests += 1
-            elif event == "search_completed":
+            elif event in {"search_completed", "web_discovery_completed"}:
                 self.search_responses += 1
 
     def snapshot(self) -> dict[str, Any]:
@@ -70,6 +74,7 @@ class RunTelemetry(logging.Handler):
                 "report_ttft_s": self.report_ttft_s[-1] if self.report_ttft_s else None,
                 "cost": None,
                 "report_iteration": dict(self.report_iteration_counts),
+                "web_rag": dict(self.web_rag_counts),
             }
 
 

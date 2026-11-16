@@ -8,12 +8,15 @@ import re
 from typing import Any
 
 from deep_researcher.config import Configuration
+from deep_researcher.llm.structured import ModelOutputError
 from deep_researcher.models import Evidence, SummaryState, TodoItem
 from deep_researcher.report_iteration import (
     ReportDraft,
     ReportIteration,
     SupplementTask,
 )
+from deep_researcher.services.report_format import comparable_report
+from deep_researcher.services.research_constraints import validate_research_question
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +110,18 @@ def prepare_round(
         and cycle.supplements[-1].search_completed
         and not cycle.supplements[-1].novel_evidence_ids
     )
+    invalid_questions: list[str] = []
     for issue in draft.review.issues:
         if issue.kind != "missing_evidence":
+            continue
+        try:
+            # 历史检查点可能保存旧协议通过的自评问题；恢复时也要挡在搜索前。
+            validate_research_question(issue.question, issue.query)
+        except ModelOutputError as exc:
+            invalid_questions.append(str(exc))
+            logger.warning(
+                "未安排补搜 · %s", exc, extra={"event": "report_gap_rejected"}
+            )
             continue
         if (
             len(cycle.supplements) >= config.report_max_supplement_tasks
@@ -123,7 +136,10 @@ def prepare_round(
             TodoItem(
                 id=task_id,
                 title="补充研究：" + issue.question,
-                intent=issue.reason + "；需要回答：" + issue.question,
+                # 评审 reason 是待核对的判断，只保存在 SupplementTask；不能充当事实前提。
+                intent="根据外部证据回答："
+                + issue.question
+                + "。材料不足时明确说明，不能评价当前报告。",
                 query=issue.query,
             )
         )
@@ -158,7 +174,9 @@ def prepare_round(
         )
     else:
         # 保存实际命中的停止原因，不能让用户猜究竟是哪一条规则。
-        if len(cycle.supplements) >= config.report_max_supplement_tasks:
+        if invalid_questions:
+            reason = "剩余补充问题不能由外部资料回答，未发起搜索"
+        elif len(cycle.supplements) >= config.report_max_supplement_tasks:
             reason = "已达到全研究的补充任务上限"
         elif no_progress:
             reason = "上一次补搜没有取得内容不同的新证据"
@@ -176,10 +194,33 @@ def commit_draft(cycle: ReportIteration, text: str, citation_ids: list[str]) -> 
     cycle.drafts.append(draft)
     if (
         previous
-        and text.strip() == previous.text.strip()
+        and comparable_report(text) == comparable_report(previous.text)
         and citation_ids == previous.citation_ids
     ):
         draft.review, draft.review_error = previous.review, previous.review_error
+        # 空行变动可能改变 P 编号，明确这份反馈属于哪一版原文，不能冒充新评审。
+        draft.review_reused_from = (
+            previous.review_reused_from
+            if previous.review_reused_from is not None
+            else previous.revision
+        )
         stop(cycle, "报告修订没有改变正文，停止重复迭代")
+        logger.info(
+            "修订没有实质变化 · 停止重复评审",
+            extra={"event": "report_revision_unchanged"},
+        )
     else:
         cycle.status, cycle.next_action = "reviewing", "review"
+    if previous:
+        logger.info(
+            "报告修订 · 新采用证据=%s · 移除引用=%s",
+            "、".join(sorted(set(citation_ids) - set(previous.citation_ids))) or "无",
+            "、".join(sorted(set(previous.citation_ids) - set(citation_ids))) or "无",
+            extra={
+                "event": "report_revision_materials",
+                "revision": cycle.revision,
+                "added_citation_ids": sorted(
+                    set(citation_ids) - set(previous.citation_ids)
+                ),
+            },
+        )

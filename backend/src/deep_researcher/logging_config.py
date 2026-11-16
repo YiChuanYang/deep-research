@@ -33,6 +33,9 @@ _CONTEXT_FIELDS = (
     "stage", "research_stage", "checkpoint", "agent",
 )
 _COMPONENTS: dict[str, tuple[str, str]] = {
+    "rag.pipeline": ("🌐", "rag.web"),
+    "rag.retrieval": ("🧲", "rag.retrieve"),
+    "rag.store": ("🗄️", "rag.store"),
     "deep_researcher": ("🚀", "research"),
     "deep_researcher.task": ("📋", "research.task"),
     "services.planner": ("🧭", "services.planner"),

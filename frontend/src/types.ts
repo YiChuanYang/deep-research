@@ -7,6 +7,8 @@ export interface RunItem {
 export interface RunList { items: RunItem[]; limit: number; offset: number; has_more: boolean }
 export interface TaskProgress {
   id: number; title: string; status: TaskStatus; selected: boolean; evidence_count: number; citation_count: number;
+  retrieval?: { stage?: string; discovered?: number; full_pages?: number; snippet_pages?: number; cached_pages?: number; chunks?: number; embedded_chunks?: number; selected?: number; local_sufficient?: boolean };
+  notices?: string[];
 }
 export interface RunProgress extends RunItem {
   execution: 'idle' | 'queued' | 'executing'; next_nodes: string[]; active_task_id: number | null;
@@ -25,10 +27,15 @@ export interface ReportIssue {
 export interface ReportIterationDetail {
   run_id: string;
   iteration: null | {
-    drafts: { revision: number; text: string; citation_ids: string[]; review: { issues: ReportIssue[] } | null; review_error: string | null }[];
+    drafts: { revision: number; text: string; citation_ids: string[]; review: { issues: ReportIssue[] } | null; review_error: string | null; review_reused_from?: number | null }[];
     supplements: { task_id: number; revision: number; question: string; query: string; novel_evidence_ids: string[] }[];
   };
 }
-export interface Citation { evidence_id: string; title: string; url: string; text: string }
+export interface Citation {
+  evidence_id: string; title: string; url: string; text: string;
+  snapshot_id?: string | null; section?: string; start?: number | null; end?: number | null;
+  retrieved_at?: string; kind?: string; truncated?: boolean; content_hash?: string | null;
+}
+export interface PageSnapshot { text: string; start: number | null; end: number | null; content_hash: string; retrieved_at: string }
 export interface TaskResult { id: number; title: string; status: TaskStatus; summary: string | null; citation_ids: string[] }
 export interface ResearchResult { run_id: string; report_markdown: string; tasks: TaskResult[]; citations: Citation[] }

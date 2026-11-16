@@ -60,6 +60,10 @@ watch(() => props.progress, (value, previous) => {
     if (before.status !== task.status) record(`任务 ${task.id}「${task.title}」：${taskLabels[task.status]}`);
     if (before.evidence_count !== task.evidence_count) record(`任务 ${task.id}：已保存 ${task.evidence_count} 条证据`);
     if (before.citation_count !== task.citation_count) record(`任务 ${task.id}：摘要引用 ${task.citation_count} 条证据`);
+    if (before.retrieval?.stage !== task.retrieval?.stage && task.retrieval?.stage) {
+      const r = task.retrieval;
+      record(`任务 ${task.id}：正文 ${r.full_pages ?? 0} 页 · 文本块 ${r.chunks ?? 0} · 选中 ${r.selected ?? 0} 条证据`);
+    }
   }
   if (value.next_nodes.join(',') !== previous.next_nodes.join(',') && value.next_nodes.length) {
     record(`检查点更新 · 待执行：${value.next_nodes.map(nodeLabel).join(' / ')}`);
@@ -107,7 +111,10 @@ onBeforeUnmount(() => { window.clearInterval(timer); document.removeEventListene
     <ol v-else class="task-list">
       <li v-for="task in progress.tasks" :key="task.id" :class="{ muted: !task.selected, active: executing && task.id === progress.active_task_id && task.status === 'running' }">
         <span class="task-symbol"><Check v-if="task.status === 'completed'" :size="17" /><Minus v-else-if="task.status === 'skipped' || !task.selected" :size="16" /><LoaderCircle v-else-if="task.status === 'running' && executing" :size="17" class="spin" /><Circle v-else :size="15" /></span>
-        <div class="task-content"><span class="task-index">任务 {{ task.id.toString().padStart(2, '0') }}</span><h3>{{ task.title }}</h3><div class="task-metrics"><span>{{ task.evidence_count }} 条证据</span><span>{{ task.citation_count }} 条引用</span></div></div>
+        <div class="task-content"><span class="task-index">任务 {{ task.id.toString().padStart(2, '0') }}</span><h3>{{ task.title }}</h3><div class="task-metrics"><span>{{ task.evidence_count }} 条证据</span><span>{{ task.citation_count }} 条引用</span></div>
+          <div v-if="task.retrieval?.stage" class="task-metrics"><span>{{ task.retrieval.discovered ?? 0 }} 个候选网页</span><span>{{ task.retrieval.full_pages ?? 0 }} 页正文</span><span>{{ task.retrieval.chunks ?? 0 }} 个文本块</span><span v-if="task.retrieval.local_sufficient">复用已有资料</span></div>
+          <details v-if="task.notices?.length" class="retrieval-notices"><summary>资料限制 · {{ task.notices.length }}</summary><p v-for="notice in task.notices" :key="notice">{{ notice }}</p></details>
+        </div>
         <span :class="['task-state', task.status]">{{ task.selected ? taskLabels[task.status] : '本轮未执行' }}</span>
       </li>
     </ol>
@@ -119,3 +126,8 @@ onBeforeUnmount(() => { window.clearInterval(timer); document.removeEventListene
     </details>
   </div>
 </template>
+
+<style scoped>
+.retrieval-notices { margin-top: 8px; color: #64748b; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.retrieval-notices summary { cursor: pointer; }
+</style>

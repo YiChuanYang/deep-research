@@ -17,6 +17,8 @@ class ReportIssue(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list, max_length=6)
     question: str = Field(default="", max_length=200)
     query: str = Field(default="", max_length=200)
+    # 原需求片段仅用于核对缺口范围，旧持久化记录允许缺省。
+    topic_quote: str = ""
 
     @model_validator(mode="after")
     def check_action(self) -> ReportIssue:
@@ -69,6 +71,8 @@ class ReportDraft(BaseModel):
     review: ReportReview | None = None
     review_error: str | None = None
     review_input_chars: int = 0
+    # 仅排版变化而复用反馈时，段落编号仍对应这个来源版本；旧记录默认 None。
+    review_reused_from: int | None = None
 
 
 class SupplementTask(BaseModel):

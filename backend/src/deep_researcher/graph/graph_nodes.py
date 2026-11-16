@@ -24,11 +24,13 @@ from deep_researcher.graph.graph_state import (
     encode_state,
 )
 from deep_researcher.llm.llm import MyLLM
+from deep_researcher.llm.structured import ModelOutputError
 from deep_researcher.logging_config import (
     log_context,
     log_exception_once,
 )
-from deep_researcher.models import SummaryState
+from deep_researcher.models import EvidenceBatch, SummaryState
+from deep_researcher.rag.pipeline import WebRagPipeline
 from deep_researcher.prompts import (
     query_rewriter_system_prompt,
     reporter_system_prompt,
@@ -43,6 +45,7 @@ from deep_researcher.services.query_rewriter import QueryRewriteService
 from deep_researcher.services.report_format import report_suffix
 from deep_researcher.services.report_reflection import ReportReflectionService
 from deep_researcher.services.reporter import ReportingService
+from deep_researcher.services.research_constraints import validate_research_question
 from deep_researcher.services.search import SearchService
 from deep_researcher.services.summarizer import SummarizationService
 
@@ -62,6 +65,12 @@ class ResearchNodes:
         self.config = config
         self.execution_id = execution_id
         self._llm: MyLLM | None = None
+        self._rag: dict[str, WebRagPipeline] = {}
+
+    def rag(self, run_id: str) -> WebRagPipeline:
+        if run_id not in self._rag:
+            self._rag[run_id] = WebRagPipeline(self.config, run_id, self.llm)
+        return self._rag[run_id]
 
     def llm(self) -> MyLLM:
         """首次需要模型时再创建客户端。"""
@@ -119,6 +128,7 @@ class ResearchNodes:
             )
 
             task_nodes = {
+                "lookup_corpus", "discover_sources", "read_sources", "index_documents", "retrieve_evidence",
                 "rewrite_query",
                 "search",
                 "summarize",
@@ -132,6 +142,8 @@ class ResearchNodes:
             )
 
             stages = {
+                "lookup_corpus": "tasks", "discover_sources": "tasks", "read_sources": "tasks",
+                "index_documents": "tasks", "retrieve_evidence": "tasks",
                 "plan": "plan",
                 "select_task": "tasks",
                 "rewrite_query": "tasks",
@@ -277,9 +289,34 @@ class ResearchNodes:
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
         task = state.get_task(task_id)
+        cycle = (
+            report_cycle.iteration(graph_state)
+            if graph_state.get("report_iteration") is not None else None
+        )
+        supplement = (
+            next((item for item in cycle.supplements if item.task_id == task_id), None)
+            if cycle else None
+        )
+        if supplement is not None:
+            try:
+                validate_research_question(supplement.question, supplement.query)
+            except ModelOutputError:
+                task.status = "skipped"
+                task.notices.append("补充问题是对报告的自评，未发送外部搜索")
+                supplement.search_completed = True
+                logger.warning("跳过补充任务 · 问题无法通过外部搜索回答")
+                return report_cycle.update(cycle)
         task.search_query = QueryRewriteService(
             self.query_agent, self.config,
         ).rewrite_task(state, task_id)
+        if supplement is not None:
+            try:
+                validate_research_question(supplement.question, task.effective_query)
+            except ModelOutputError:
+                # 原始补充查询已校验，只回退改写结果，不把它变成搜索自评问题。
+                task.search_query = supplement.query
+                task.notices.append("改写带入报告自评用语，沿用原补充查询")
+                logger.warning("补充查询改写未采用 · 沿用已校验的原查询")
         if graph_state.get("report_iteration") is not None:
             cycle = report_cycle.iteration(graph_state)
             supplement = next((item for item in cycle.supplements if item.task_id == task_id), None)
@@ -300,6 +337,20 @@ class ResearchNodes:
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
+        task = state.get_task(task_id)
+        if graph_state.get("report_iteration") is not None:
+            cycle = report_cycle.iteration(graph_state)
+            supplement = next((item for item in cycle.supplements if item.task_id == task_id), None)
+            if supplement is not None:
+                try:
+                    # 恢复可能直接从 search 开始，不能只依赖 rewrite_query 的检查。
+                    validate_research_question(supplement.question, task.effective_query)
+                except ModelOutputError:
+                    task.status = "skipped"
+                    task.notices.append("补充问题或查询是报告自评，未发送外部搜索")
+                    supplement.search_completed = True
+                    logger.warning("补充搜索未执行 · 问题无法通过外部资料回答")
+                    return report_cycle.update(cycle)
 
         batch = SearchService(self.config).search_task(
             state,
@@ -331,12 +382,85 @@ class ResearchNodes:
                 supplement.search_completed = True
                 return report_cycle.update(cycle)
         return {}
+    def discover_sources(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        task = state.get_task(self.task_id(graph_state))
+        result = self.rag(state.run_id).discover(state, task.id)
+        task.retrieval.update(stage="discovered", discovered=len(result["candidates"]))
+        return {}
+
+    def read_sources(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        task = state.get_task(self.task_id(graph_state))
+        result = self.rag(state.run_id).read(task.id)
+        task.retrieval.update({k: v for k, v in result.items() if k not in {"page_ids", "notices"}})
+        task.retrieval["stage"] = "read"
+        task.notices = result["notices"]
+        return {}
+
+    def index_documents(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        task = state.get_task(self.task_id(graph_state))
+        result = self.rag(state.run_id).index(task.id)
+        task.retrieval.update({k: v for k, v in result.items() if k != "notices"})
+        task.retrieval["stage"] = "indexed"
+        task.notices = result["notices"]
+        return {}
+
+    def lookup_corpus(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        """补充任务先查本研究资料；只有明确可回答才跳过联网。"""
+        task = state.get_task(self.task_id(graph_state))
+        if task.retrieval.get("local_checked"):
+            return {}
+        pipeline = self.rag(state.run_id)
+        batch = pipeline.retrieve(state, task.id, local_only=True)
+        sufficient = pipeline.local_sufficient(state, task.id, batch)
+        task.retrieval.update(local_checked=True, local_sufficient=sufficient)
+        if sufficient:
+            task.notices = list(dict.fromkeys([*task.notices, *batch.notices, "本次补充复用已有网页资料，未发起搜索"]))
+            return self._accept_rag_batch(state, graph_state, batch)
+        logger.info("已有资料不足 · 继续联网补充", extra={"event": "web_local_insufficient"})
+        return {}
+
+    def retrieve_evidence(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        batch = self.rag(state.run_id).retrieve(state, self.task_id(graph_state))
+        return self._accept_rag_batch(state, graph_state, batch)
+
+    def _accept_rag_batch(self, state: SummaryState, graph_state: ResearchGraphState,
+                          batch: EvidenceBatch) -> dict[str, Any]:
+        task = state.get_task(self.task_id(graph_state))
+        known = {report_cycle.evidence_fingerprint(item) for item in state.evidence.values()}
+        state.sources, state.evidence = batch.sources, batch.evidence
+        task.evidence_ids = list(batch.evidence_ids)
+        task.notices = list(dict.fromkeys([*task.notices, *batch.notices]))
+        task.retrieval.update(stage="retrieved", selected=len(task.evidence_ids))
+        if not task.evidence_ids:
+            task.status = "skipped"
+            task.notices.append("没有选出能回答当前任务的证据")
+        if graph_state.get("report_iteration") is not None:
+            cycle = report_cycle.iteration(graph_state)
+            supplement = next((s for s in cycle.supplements if s.task_id == task.id), None)
+            if supplement is not None:
+                supplement.search_completed = True
+                for key in task.evidence_ids:
+                    fingerprint = report_cycle.evidence_fingerprint(state.evidence[key])
+                    if fingerprint not in known:
+                        supplement.novel_evidence_ids.append(key)
+                        known.add(fingerprint)
+                return report_cycle.update(cycle)
+        return {}
+
     def summarize(
         self,
         state: SummaryState,
         graph_state: ResearchGraphState,
     ) -> dict[str, Any]:
         task_id = self.task_id(graph_state)
+        cycle = (
+            report_cycle.iteration(graph_state)
+            if graph_state.get("report_iteration") is not None else None
+        )
+        supplement = (
+            next((item for item in cycle.supplements if item.task_id == task_id), None)
+            if cycle else None
+        )
 
         result = SummarizationService(
             self.summary_agent,
@@ -344,6 +468,7 @@ class ResearchNodes:
         ).summarize_task(
             state,
             task_id,
+            research_question=supplement.question if supplement else None,
         )
 
         task = state.get_task(task_id)
@@ -439,6 +564,10 @@ class ResearchNodes:
                 include_references=cycle is None,
                 previous_report=previous.text if previous else None,
                 feedback=json.dumps(previous.review.model_dump(), ensure_ascii=False) if previous and previous.review else None,
+                supplement_task_ids=(
+                    [item.task_id for item in cycle.supplements if item.revision == cycle.revision]
+                    if cycle else None
+                ),
             )
         finally:
             flush()
@@ -491,7 +620,8 @@ class ResearchNodes:
             raise ValueError("缺少与当前报告绑定的通过评审")
         if cycle.status == "unreviewed" and any(item.review and item.review.blocking for item in cycle.drafts):
             raise ValueError("未复核状态不能绕过已记录的实质问题")
-        allowed = [key for task in state.todo_items if task.status == "completed" for key in task.citation_ids]
+        allowed = [key for task in state.todo_items if task.status == "completed"
+                   for key in (task.evidence_ids if task.retrieval else task.citation_ids)]
         if draft.citation_ids:
             actual = EvidenceService().validate(state, draft.text, allowed)
             if set(actual) != set(draft.citation_ids):
@@ -550,6 +680,11 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
     #定义节点
     builder = StateGraph(ResearchGraphState)
     actions:dict[str,Action]={
+        "lookup_corpus": nodes.lookup_corpus,
+        "discover_sources": nodes.discover_sources,
+        "read_sources": nodes.read_sources,
+        "index_documents": nodes.index_documents,
+        "retrieve_evidence": nodes.retrieve_evidence,
         "plan":nodes.plan,
         "select_task":nodes.select_task,
         "rewrite_query":nodes.rewrite_query,
@@ -589,7 +724,14 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
 
     def after_rewritten(graph_state: ResearchGraphState) -> str:
         task = decode_state(graph_state["payload"]).get_task(nodes.task_id(graph_state))
-        return "select_task" if task.status == "skipped" else "search"
+        if task.status == "skipped":
+            return "select_task"
+        if not nodes.config.enable_web_rag:
+            return "search"
+        cycle = graph_state.get("report_iteration")
+        if cycle and any(s["task_id"] == task.id for s in cycle["supplements"]):
+            return "lookup_corpus"
+        return "discover_sources"
 
     def after_summarized(graph_state:ResearchGraphState)->str:
         """总结后的路由函数"""
@@ -614,7 +756,18 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
             "report":"report",
         }
     )
-    builder.add_conditional_edges("rewrite_query", after_rewritten, ["select_task", "search"])
+    builder.add_conditional_edges("rewrite_query", after_rewritten,
+                                  ["select_task", "search", "discover_sources", "lookup_corpus"])
+    builder.add_edge("discover_sources", "read_sources")
+    builder.add_edge("read_sources", "index_documents")
+    builder.add_edge("index_documents", "retrieve_evidence")
+    builder.add_conditional_edges("retrieve_evidence", after_searched, ["select_task", "summarize"])
+
+    def after_local(values: ResearchGraphState) -> str:
+        task = decode_state(values["payload"]).get_task(nodes.task_id(values))
+        return "summarize" if task.retrieval.get("local_sufficient") else "discover_sources"
+
+    builder.add_conditional_edges("lookup_corpus", after_local, ["summarize", "discover_sources"])
     builder.add_conditional_edges(
         "search",
         after_searched,

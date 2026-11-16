@@ -25,6 +25,9 @@ from deep_researcher.api.schemas import (
     TaskResultResponse,
 )
 from deep_researcher.graph.graph_repository import RunInfo
+from deep_researcher.rag.store import WebRagStore
+from pathlib import Path
+from dataclasses import asdict
 
 
 router = APIRouter()
@@ -185,6 +188,8 @@ def get_research_status(
                 selected=task.id in selected_ids,
                 evidence_count=len(task.evidence_ids),
                 citation_count=len(task.citation_ids),
+                retrieval=task.retrieval,
+                notices=task.notices,
             )
             for task in tasks
         ],
@@ -235,6 +240,14 @@ def get_research_result(
                 title=source.title,
                 url=source.url,
                 text=evidence.text,
+                snapshot_id=evidence.snapshot_id,
+                section=evidence.section,
+                start=evidence.start,
+                end=evidence.end,
+                retrieved_at=evidence.retrieved_at,
+                kind=evidence.kind,
+                truncated=evidence.truncated,
+                content_hash=evidence.content_hash,
             )
         )
 
@@ -304,6 +317,36 @@ def delete_research(
       _manager(request).delete(run_id)
 
       return Response(status_code=204)
+
+@router.get("/research/{run_id}/evidence/{evidence_id}/snapshot")
+def get_evidence_snapshot(run_id: RunId, evidence_id: str, request: Request) -> dict[str, object]:
+    """按研究已有证据读取当时的正文快照，不重新联网。"""
+    snapshot = _manager(request).get_snapshot(run_id)
+    item = snapshot.state.evidence.get(evidence_id) if snapshot.state else None
+    workspace = snapshot.info.config.get("web_rag_workspace")
+    if (item is None or not item.snapshot_id or not workspace or
+            not (Path(workspace) / run_id / "corpus.sqlite3").is_file()):
+        raise ApiError(404, "snapshot_not_found", "该证据没有可用的网页快照", run_id=run_id)
+    try:
+        page = WebRagStore(workspace, run_id).describe(item.snapshot_id)
+    except KeyError as exc:
+        raise ApiError(404, "snapshot_not_found", "网页快照不存在", run_id=run_id) from exc
+    return {**asdict(page), "evidence_id": evidence_id, "start": item.start, "end": item.end}
+
+
+@router.get("/research/{run_id}/retrieval/{task_id}")
+def get_retrieval_audit(run_id: RunId, task_id: int, request: Request) -> dict[str, object]:
+    snapshot = _manager(request).get_snapshot(run_id)
+    if snapshot.state is None or not any(t.id == task_id for t in snapshot.state.todo_items):
+        raise ApiError(404, "task_not_found", "研究任务不存在", run_id=run_id)
+    workspace = snapshot.info.config.get("web_rag_workspace")
+    if not workspace or not (Path(workspace) / run_id / "corpus.sqlite3").is_file():
+        return {"task_id": task_id, "stages": {}}
+    store = WebRagStore(workspace, run_id)
+    stages = {name: store.record(f"task:{task_id}:{name}") for name in
+              ["discover", "read", "index", "retrieve:local", "local_coverage", "retrieve:web"]}
+    return {"task_id": task_id, "stages": stages}
+
 
 @router.get("/research/{run_id}/events")
 def subscribe_research(

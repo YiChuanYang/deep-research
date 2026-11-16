@@ -52,7 +52,11 @@ async function mockApi(page: Page, overrides: Partial<Scenario> = {}): Promise<S
       return route.fulfill({ status: 202, json: { run_id: id, accepted: true } });
     }
     if (path.endsWith('/report')) return route.fulfill({ contentType: 'text/markdown; charset=utf-8', body: markdown });
-    if (path.endsWith('/result')) return route.fulfill({ json: { run_id: id, report_markdown: markdown, citations: [{ evidence_id: 'E0001', title: '光谱与空间特征联合建模：研究综述', url: 'https://example.com/research/spectral-spatial', text: evidence }], tasks: [{ id: 1, title: '主要研究方法与技术演进', status: 'completed', summary: '任务摘要。[E0001]', citation_ids: ['E0001'] }] } });
+    if (path.endsWith('/snapshot')) {
+      return route.fulfill({ json: { text: evidence + '\n\n网页原文结尾。', start: 0,
+        end: evidence.length, content_hash: 'abc123', retrieved_at: '2026-11-10T13:20:00+00:00' } });
+    }
+    if (path.endsWith('/result')) return route.fulfill({ json: { run_id: id, report_markdown: markdown, citations: [{ evidence_id: 'E0001', title: '光谱与空间特征联合建模：研究综述', url: 'https://example.com/research/spectral-spatial', text: evidence, snapshot_id: 'snapshot-1', start: 0, end: evidence.length, kind: 'page_excerpt' }], tasks: [{ id: 1, title: '主要研究方法与技术演进', status: 'completed', summary: '任务摘要。[E0001]', citation_ids: ['E0001'] }] } });
     if (scenario.offline) return route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: '查询暂时不可用' } } });
     const done = id === completeId || scenario.completed;
     const tasksDone = done || scenario.checkpoint !== 'summarize';
@@ -69,7 +73,9 @@ async function mockApi(page: Page, overrides: Partial<Scenario> = {}): Promise<S
       } : null,
       tasks: [
         { id: 1, title: '主要研究方法与技术演进', status: 'completed', selected: true, evidence_count: 5, citation_count: 3 },
-        { id: 2, title: '关键技术、评测方法与公开数据集', status: tasksDone ? 'completed' : 'running', selected: true, evidence_count: scenario.evidenceCount, citation_count: tasksDone ? 2 : scenario.citationCount },
+        { id: 2, title: '关键技术、评测方法与公开数据集', status: tasksDone ? 'completed' : 'running', selected: true, evidence_count: scenario.evidenceCount, citation_count: tasksDone ? 2 : scenario.citationCount,
+          retrieval: { stage: 'retrieved', discovered: 5, full_pages: 4, snippet_pages: 1, chunks: 63, selected: scenario.evidenceCount },
+          notices: ['1 个来源仅提供搜索片段，未取得完整正文'] },
         { id: 3, title: '当前挑战与值得关注的发展方向', status: tasksDone ? 'skipped' : 'pending', selected: true, evidence_count: 0, citation_count: 0 },
         { id: 4, title: '工业部署的实践案例', status: 'pending', selected: false, evidence_count: 0, citation_count: 0 },
       ],
@@ -101,6 +107,10 @@ test('create, poll progress, receive report, click citation and download', async
   await page.getByRole('button', { name: '开始研究', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(activeId));
   await expect(page.getByRole('heading', { name: '关键技术、评测方法与公开数据集' })).toBeVisible();
+  await expect(page.getByText('5 个候选网页')).toBeVisible();
+  await expect(page.getByText('4 页正文')).toBeVisible();
+  await page.getByText('资料限制 · 1').click();
+  await expect(page.getByText('1 个来源仅提供搜索片段，未取得完整正文')).toBeVisible();
   await expect(page.getByText('本轮未执行', { exact: true })).toBeVisible();
   expect(scenario.postCount).toBe(1);
   await page.screenshot({ path: testInfo.outputPath('progress-desktop.png'), fullPage: true });
@@ -110,6 +120,8 @@ test('create, poll progress, receive report, click citation and download', async
   await page.getByRole('button', { name: '查看证据 E0001' }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText(evidence, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '查看当时的网页正文' }).click();
+  await expect(page.locator('.snapshot-content mark')).toHaveText(evidence);
   await page.screenshot({ path: testInfo.outputPath('evidence-desktop.png') });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).not.toBeVisible();
@@ -473,4 +485,16 @@ test('blocked report keeps draft readable and prevents useless resume', async ({
   await expect(panel).toContainText('Unresolved evidence problem');
   await panel.locator('summary').first().click();
   await expect(panel).toContainText('Missing comparison');
+});
+
+test('unchanged draft identifies the original feedback version', async ({ page }) => {
+  await mockApi(page, { reportCycle: 'improving' });
+  await page.route('**/api/research/*/iterations', route => route.fulfill({ json: {
+    run_id: activeId, iteration: { drafts: [{ revision: 1, text: 'Same facts [E0001]',
+      citation_ids: ['E0001'], review: { issues: [] }, review_error: null, review_reused_from: 0 }], supplements: [] },
+  } }));
+  await page.goto('/#/research/' + activeId);
+  const panel = page.getByRole('region', { name: '报告迭代' });
+  await panel.locator('summary').first().click();
+  await expect(panel).toContainText('沿用第 1 版反馈，未再次评审');
 });

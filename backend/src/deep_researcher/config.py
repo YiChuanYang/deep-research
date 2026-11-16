@@ -7,11 +7,11 @@ from collections.abc import Mapping
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 
 # 固定读取 backend/.env，避免工作目录改变后找错文件。
@@ -40,6 +40,13 @@ SNAPSHOT_FIELDS = {
     "notes_workspace",
     "strip_thinking_tokens",
     "evidence_max_chars",
+    "enable_web_rag", "web_rag_workspace", "web_rag_max_pages", "web_rag_page_chars",
+    "web_rag_chunk_chars", "web_rag_overlap_chars", "web_rag_max_chunks",
+    "web_rag_candidates", "web_rag_top_k", "web_rag_context_chars",
+    "web_rag_per_source", "web_rag_timeout", "web_rag_cache_hours",
+    "embedding_model", "embedding_base_url", "embedding_dimensions",
+    "enable_embeddings", "enable_rerank", "review_output_mode",
+    "embedding_backend", "embedding_cache_dir",
 }
 
 
@@ -88,6 +95,31 @@ class Configuration(BaseModel):
     fetch_full_page: bool = False
     max_tokens_per_source: int = Field(default=2000, gt=0)
 
+    # 新研究使用完整网页检索；旧快照在 for_resume 中显式回到原流程。
+    enable_web_rag: bool = True
+    web_rag_workspace: str = "./data/web_rag"
+    web_rag_max_pages: int = Field(default=5, ge=1, le=10)
+    web_rag_page_chars: int = Field(default=60000, ge=1000, le=200000)
+    web_rag_chunk_chars: int = Field(default=450, ge=200, le=2000)
+    web_rag_overlap_chars: int = Field(default=60, ge=0, le=300)
+    web_rag_max_chunks: int = Field(default=160, ge=5, le=1000)
+    web_rag_candidates: int = Field(default=16, ge=4, le=40)
+    web_rag_top_k: int = Field(default=8, ge=1, le=20)
+    web_rag_context_chars: int = Field(default=9000, ge=1000, le=30000)
+    web_rag_per_source: int = Field(default=3, ge=1, le=10)
+    web_rag_timeout: int = Field(default=90, ge=10, le=300)
+    web_rag_cache_hours: int = Field(default=24, ge=0, le=168)
+    # 默认复用同一智谱端点的凭证；独立端点必须显式配置独立密钥。
+    embedding_backend: Literal["local", "api"] = "local"
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_cache_dir: str = "./data/models"
+    embedding_base_url: str | None = None
+    embedding_api_key: SecretStr | None = Field(default=None, repr=False)
+    embedding_dimensions: int = Field(default=512, ge=1, le=4096)
+    enable_embeddings: bool = True
+    enable_rerank: bool = True
+    review_output_mode: Literal["json", "tool"] = "json"
+
     # 笔记与摘要配置。
     enable_notes: bool = True
     notes_workspace: str = Field(default="./notes", min_length=1)
@@ -98,6 +130,19 @@ class Configuration(BaseModel):
         gt=0,
         le=20000,
     )
+
+    @model_validator(mode="after")
+    def validate_web_rag_limits(self) -> Configuration:
+        """拒绝会令检索预算自相矛盾的参数组合。"""
+        if self.web_rag_overlap_chars >= self.web_rag_chunk_chars:
+            raise ValueError("WEB_RAG_OVERLAP_CHARS 必须小于 WEB_RAG_CHUNK_CHARS")
+        if self.web_rag_top_k > self.web_rag_candidates:
+            raise ValueError("WEB_RAG_TOP_K 不能大于 WEB_RAG_CANDIDATES")
+        if (self.embedding_backend == "local"
+                and self.embedding_model == "BAAI/bge-small-zh-v1.5"
+                and self.embedding_dimensions != 512):
+            raise ValueError("BAAI/bge-small-zh-v1.5 的向量维度固定为 512")
+        return self
 
     @classmethod
     def from_env(
@@ -183,6 +228,8 @@ class Configuration(BaseModel):
         data["notes_workspace"] = str(
             Path(self.notes_workspace).expanduser().resolve()
         )
+        data["web_rag_workspace"] = str(Path(self.web_rag_workspace).expanduser().resolve())
+        data["embedding_cache_dir"] = str(Path(self.embedding_cache_dir).expanduser().resolve())
 
         return data
 
@@ -202,6 +249,8 @@ class Configuration(BaseModel):
         saved.setdefault("enable_query_rewrite", False)
         # 旧检查点沿用原拓扑；不能在恢复时突然插入报告循环。
         saved.setdefault("enable_report_reflection", False)
+        saved.setdefault("enable_web_rag", False)
+        saved.setdefault("review_output_mode", "tool")
         restored = type(self).model_validate({
             **self.model_dump(),
             **saved,
@@ -221,6 +270,11 @@ class Configuration(BaseModel):
             raise ValueError(
                 "恢复时请使用原研究的 LLM_PROVIDER 和 LLM_BASE_URL"
             )
+
+        if restored.enable_web_rag and restored.embedding_backend == "api" and (self.embedding_base_url or self.llm_base_url) != (
+            restored.embedding_base_url or restored.llm_base_url
+        ):
+            raise ValueError("恢复时请使用原研究的 Embedding 服务地址")
 
         return restored
 
