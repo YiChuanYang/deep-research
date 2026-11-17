@@ -49,6 +49,7 @@ SNAPSHOT_FIELDS = {
     "embedding_backend", "embedding_cache_dir",
     "embedding_device", "embedding_threads", "embedding_batch_size",
     "rerank_include_reason",
+    "enable_parallel_tasks", "task_concurrency", "network_concurrency", "model_concurrency",
 }
 
 
@@ -126,6 +127,11 @@ class Configuration(BaseModel):
     enable_rerank: bool = True
     # 常规重排只输出编号和分数；排查证据选择时再开启自然语言理由。
     rerank_include_reason: bool = False
+    # 只控制同一研究内部的分支；API 仍按原策略排队不同研究。
+    enable_parallel_tasks: bool = True
+    task_concurrency: int = Field(default=2, ge=1, le=8)
+    network_concurrency: int = Field(default=2, ge=1, le=8)
+    model_concurrency: int = Field(default=2, ge=1, le=8)
     review_output_mode: Literal["json", "tool"] = "json"
 
     # 笔记与摘要配置。
@@ -261,6 +267,8 @@ class Configuration(BaseModel):
         saved.setdefault("review_output_mode", "tool")
         # 旧研究继续使用原重排协议，避免恢复时改变生成要求。
         saved.setdefault("rerank_include_reason", True)
+        # 旧检查点仍指向串行节点，恢复不能悄悄切换拓扑。
+        saved.setdefault("enable_parallel_tasks", False)
         restored = type(self).model_validate({
             **self.model_dump(),
             **saved,

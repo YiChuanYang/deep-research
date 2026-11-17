@@ -183,27 +183,41 @@ class WebRagPipeline:
                     extra={"event": "web_index_completed", **saved})
         return saved
 
-    def retrieve(self, state: SummaryState, task_id: int, *, local_only: bool = False) -> EvidenceBatch:
+    def select_evidence(
+        self, state: SummaryState, task_id: int, *, local_only: bool = False,
+        page_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """检索只保存 chunk_id，不分配 E 编号，允许多个任务独立执行。"""
         task = state.get_task(task_id)
         query = task.effective_query
         key = f"task:{task_id}:retrieve:{'local' if local_only else 'web'}"
         saved = self.store.record(key)
+        if saved is not None:
+            if page_ids is not None and saved.get("page_ids") != page_ids:
+                raise ValueError("检索缓存的语料版本与本批冻结快照不一致")
+            return saved
         # 同一URL更新后检索最新快照；旧证据仍固定关联原快照，历史引用不会漂移。
         latest: dict[str, PageSnapshot] = {}
-        for page in sorted(self.store.pages(), key=lambda p: p.retrieved_at):
+        for page in sorted(self.store.pages(page_ids), key=lambda p: p.retrieved_at):
             latest[page.url] = page
         all_pages = {p.snapshot_id: p for p in latest.values()}
         # 新任务/补充问题可检索本研究所有已保存网页，旧版本快照不会被覆盖。
         chunks = self.store.chunks(list(all_pages))
+        question = f"研究主题：{state.research_topic}\n当前任务：{task.title}\n目标：{task.intent}\n查询：{query}"
+        selected, audit, notices = self.retriever.retrieve(query, chunks, all_pages, question=question)
+        saved = {"selected": [r.chunk.chunk_id for r in selected], "audit": audit, "notices": notices,
+                 "page_ids": page_ids if page_ids is not None else list(all_pages)}
+        self.store.save_record(key, saved)
+        return saved
+
+    def register_evidence(self, state: SummaryState, task_id: int, *, local_only: bool = False) -> EvidenceBatch:
+        """从已保存选段登记全局证据；主图串行调用，稳定分配编号。"""
+        task = state.get_task(task_id)
+        query = task.effective_query
+        saved = self.store.record(f"task:{task_id}:retrieve:{'local' if local_only else 'web'}")
         if saved is None:
-            question = f"研究主题：{state.research_topic}\n当前任务：{task.title}\n目标：{task.intent}\n查询：{query}"
-            selected, audit, notices = self.retriever.retrieve(query, chunks, all_pages, question=question)
-            saved = {"selected": [r.chunk.chunk_id for r in selected], "audit": audit, "notices": notices}
-            self.store.save_record(key, saved)
-        # 首次检索直接复用已读语料；恢复旧选段时才需要查询历史快照。
-        by_id = {c.chunk_id: c for c in chunks}
-        if not set(saved["selected"]).issubset(by_id):
-            by_id = {c.chunk_id: c for c in self.store.chunks()}
+            raise ValueError("缺少已完成的检索选段")
+        by_id = {c.chunk_id: c for c in self.store.chunks(saved.get("page_ids"))}
         # 重放选段产物需要使用当时的快照，而不是最新缓存。
         chosen = [by_id[k] for k in saved["selected"]]
         selected_pages = {p.snapshot_id: p for p in self.store.pages(list({c.snapshot_id for c in chosen}))}
@@ -229,6 +243,11 @@ class WebRagPipeline:
                            "candidate_count": len(saved["audit"]), "evidence_ids": batch.evidence_ids,
                            "ranking": saved["audit"]})
         return batch
+
+    def retrieve(self, state: SummaryState, task_id: int, *, local_only: bool = False) -> EvidenceBatch:
+        """兼容串行入口：选段后立即登记；并发图分成两个独立阶段。"""
+        self.select_evidence(state, task_id, local_only=local_only)
+        return self.register_evidence(state, task_id, local_only=local_only)
 
     def local_sufficient(self, state: SummaryState, task_id: int, batch: EvidenceBatch) -> bool:
         """覆盖判断只决定是否补搜；返回失败按资料不足处理，不能冒充已核实。"""

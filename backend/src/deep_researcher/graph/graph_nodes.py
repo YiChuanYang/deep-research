@@ -1,10 +1,12 @@
-"""串行研究图：现有服务负责业务，LangGraph 负责调度。"""
+"""研究图：业务节点与持久化调度；保留旧串行入口以恢复历史研究。"""
 
 from __future__ import annotations
 
 import json
 import logging
 from collections.abc import Callable
+from copy import copy
+from threading import BoundedSemaphore
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
@@ -66,6 +68,16 @@ class ResearchNodes:
         self.execution_id = execution_id
         self._llm: MyLLM | None = None
         self._rag: dict[str, WebRagPipeline] = {}
+        self._network_gate = BoundedSemaphore(config.network_concurrency)
+        self._model_gate = BoundedSemaphore(config.model_concurrency)
+        self._task_gate = BoundedSemaphore(config.task_concurrency)
+
+    def fork_worker(self) -> ResearchNodes:
+        """浅复制保留子类工厂；重置可变客户端/检索缓存，限流器继续共享。"""
+        worker = copy(self)
+        worker._llm = None
+        worker._rag = {}
+        return worker
 
     def rag(self, run_id: str) -> WebRagPipeline:
         if run_id not in self._rag:
@@ -75,7 +87,7 @@ class ResearchNodes:
     def llm(self) -> MyLLM:
         """首次需要模型时再创建客户端。"""
         if self._llm is None:
-            self._llm = MyLLM(config=self.config)
+            self._llm = MyLLM(config=self.config, request_gate=self._model_gate)
 
         return self._llm
 
@@ -133,6 +145,8 @@ class ResearchNodes:
                 "search",
                 "summarize",
                 "save_note",
+                "parallel_rewrite", "parallel_lookup", "parallel_collect",
+                "parallel_retrieve", "parallel_summarize",
             }
 
             task_id = (
@@ -163,7 +177,7 @@ class ResearchNodes:
                 execution_id=self.execution_id,
                 task_id=task_id,
                 stage=name,
-                research_stage=stages[name],
+                research_stage=stages.get(name, "tasks"),
                 checkpoint=(
                     name if name in task_nodes else None
                 ),
@@ -402,13 +416,15 @@ class ResearchNodes:
         return {}
     def discover_sources(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
         task = state.get_task(self.task_id(graph_state))
-        result = self.rag(state.run_id).discover(state, task.id)
+        with self._network_gate:
+            result = self.rag(state.run_id).discover(state, task.id)
         task.retrieval.update(stage="discovered", discovered=len(result["candidates"]))
         return {}
 
     def read_sources(self, state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
         task = state.get_task(self.task_id(graph_state))
-        result = self.rag(state.run_id).read(task.id)
+        with self._network_gate:
+            result = self.rag(state.run_id).read(task.id)
         task.retrieval.update({k: v for k, v in result.items() if k not in {"page_ids", "notices"}})
         task.retrieval["stage"] = "read"
         task.notices = result["notices"]
@@ -723,6 +739,13 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
 
         )
 
+    from deep_researcher.graph.parallel_tasks import ParallelTasks
+
+    ParallelTasks(nodes).install(builder)
+
+    def task_entry() -> str:
+        return "parallel_prepare" if nodes.config.enable_parallel_tasks and nodes.config.enable_web_rag else "select_task"
+
     def after_selected(graph_state:ResearchGraphState)->str:
         """select_task 后的路由函数"""
         return (
@@ -762,10 +785,7 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
         )
 
     builder.add_edge(START,"plan")
-    builder.add_edge(
-        "plan",
-        "select_task"
-    )
+    builder.add_conditional_edges("plan", lambda _: task_entry(), ["parallel_prepare", "select_task"])
     builder.add_conditional_edges(
         "select_task",
         after_selected,
@@ -814,12 +834,12 @@ def build_graph(nodes:ResearchNodes,checkpointer:BaseCheckpointSaver)->CompiledS
             report_cycle.iteration(values).next_action]
 
     def after_prepared(values: ResearchGraphState) -> str:
-        return {"tasks": "select_task", "report": "report", "finalize": "finalize_report", "blocked": "block_report"}[
+        return {"tasks": task_entry(), "report": "report", "finalize": "finalize_report", "blocked": "block_report"}[
             report_cycle.iteration(values).next_action]
 
     builder.add_conditional_edges("report", after_report, ["save_report", "reflect_report", "finalize_report", "block_report"])
     builder.add_conditional_edges("reflect_report", after_review, ["prepare_report_revision", "finalize_report", "block_report"])
-    builder.add_conditional_edges("prepare_report_revision", after_prepared, ["select_task", "report", "finalize_report", "block_report"])
+    builder.add_conditional_edges("prepare_report_revision", after_prepared, ["parallel_prepare", "select_task", "report", "finalize_report", "block_report"])
     builder.add_edge("finalize_report", "save_report")
     builder.add_edge("save_report",END)
 

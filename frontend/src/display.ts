@@ -13,6 +13,19 @@ Object.assign(nodeLabels, {
   prepare_report_revision: '安排报告改进',
   finalize_report: '定稿与引用整理',
   block_report: '保留未通过的草稿',
+  parallel_prepare: '安排本批任务',
+  parallel_rewrite: '并发改写搜索词',
+  parallel_merge_rewrite: '汇总搜索词',
+  parallel_lookup: '并发检查已有资料',
+  parallel_merge_lookup: '汇总资料覆盖情况',
+  parallel_collect: '并发搜索与读取网页',
+  parallel_merge_collect: '汇总网页资料',
+  parallel_index: '统一建立资料索引',
+  parallel_retrieve: '并发检索与重排',
+  parallel_register: '统一登记证据',
+  parallel_summarize: '并发生成摘要',
+  parallel_merge_summary: '汇总任务摘要',
+  parallel_save: '保存本批任务结果',
 });
 export const nodeLabel = (name: string) => nodeLabels[name] ?? name;
 export const shortId = (id: string) => id.slice(0, 8).toUpperCase();

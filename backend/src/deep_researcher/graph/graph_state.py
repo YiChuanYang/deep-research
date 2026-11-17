@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from deep_researcher.models import (
     Evidence,
@@ -14,10 +14,27 @@ from deep_researcher.models import (
     TodoItem,
 )
 
+def merge_task_results(
+    current: dict[str, dict[str, Any]], incoming: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """按批次/阶段/任务键合并；重复投递相同结果幂等，冲突则拒绝覆盖。"""
+    merged = dict(current)
+    for key, result in incoming.items():
+        if key in merged and merged[key] != result:
+            raise ValueError(f"并发任务结果冲突：{key}")
+        merged[key] = result
+    return merged
+
+
 class OptionalGraphFields(TypedDict, total=False):
     """total=False 允许旧检查点没有新增字段。"""
 
     report_iteration: dict[str, Any]
+    parallel_batch_id: str
+    parallel_task_ids: list[int]
+    parallel_page_ids: list[str]
+    # Annotated 在类型之外附加 reducer，LangGraph 用它合并同一步多个分支的更新。
+    parallel_results: Annotated[dict[str, dict[str, Any]], merge_task_results]
 
 
 class ResearchGraphState(OptionalGraphFields):

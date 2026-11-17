@@ -8,7 +8,7 @@ interface ResearchEvent {
   run_id: string;
   execution_id: string;
   type: string;
-  data: { text?: string; generation_id?: string; node?: string };
+  data: { text?: string; generation_id?: string; node?: string; task_id?: number | null };
 }
 
 /** 事件只用于展示；研究是否完成始终由状态/结果接口决定。 */
@@ -28,6 +28,8 @@ export function useResearchStream(
   let generationId = '';
   let stopped = false;
   let disposed = false;
+  // 同一个节点可以有多个任务在执行；不能因其中一个返回就清空整个阶段。
+  const runningNodes = new Map<string, string>();
 
   function close(): void {
     window.clearTimeout(retryTimer);
@@ -75,6 +77,7 @@ export function useResearchStream(
         draft.value = '';
         phase.value = 'waiting';
         currentNode.value = '';
+        runningNodes.clear();
       }
       if (event.type === 'report.started') {
         generationId = event.data.generation_id ?? '';
@@ -87,12 +90,15 @@ export function useResearchStream(
       } else if (event.type === 'report.generated' && event.data.generation_id === generationId) {
         phase.value = 'generated';
       } else if (event.type === 'node.started') {
+        runningNodes.set(`${event.data.node}:${event.data.task_id ?? ''}`, event.data.node ?? '');
         currentNode.value = event.data.node ?? '';
       } else if (event.type === 'node.returned' || event.type === 'node.failed') {
-        if (currentNode.value === event.data.node) currentNode.value = '';
+        runningNodes.delete(`${event.data.node}:${event.data.task_id ?? ''}`);
+        currentNode.value = Array.from(runningNodes.values()).pop() ?? '';
       } else if (event.type === 'research.failed') {
         phase.value = 'failed';
         currentNode.value = '';
+        runningNodes.clear();
       }
       // 不在历史 failed/completed 处关连接：后面可能紧跟恢复执行事件。
     });
@@ -101,6 +107,7 @@ export function useResearchStream(
       // 服务端确认已补发到当前末尾且研究已停止，才关闭订阅。
       stopped = true;
       currentNode.value = '';
+      runningNodes.clear();
       close();
       void refresh();
     });

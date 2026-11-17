@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
+from threading import RLock
 from typing import Any, Literal
 
 from openai import OpenAI
@@ -15,6 +16,8 @@ from deep_researcher.config import Configuration
 from deep_researcher.rag.store import digest
 
 logger = logging.getLogger(__name__)
+# 同一进程只保留一个本地编码入口；避免小显存显卡同时运行多个批次。
+_LOCAL_INFERENCE_LOCK = RLock()
 
 
 @dataclass(frozen=True)
@@ -83,8 +86,9 @@ class EmbeddingClient:
         self.device = "api"
         if config.embedding_backend == "local":
             self.signature = digest(f"local|{config.embedding_model}|{config.embedding_dimensions}")
-            runtime = local_embedding(config.embedding_model, str(Path(config.embedding_cache_dir).resolve()),
-                                      config.embedding_device, config.embedding_threads)
+            with _LOCAL_INFERENCE_LOCK:
+                runtime = local_embedding(config.embedding_model, str(Path(config.embedding_cache_dir).resolve()),
+                                          config.embedding_device, config.embedding_threads)
             self.local = runtime.engine
             self.device = runtime.device
             self.providers = runtime.providers
@@ -108,7 +112,8 @@ class EmbeddingClient:
         tokens: int | None = None
         if self.client is None:
             # 本地 ONNX 调用是同步计算，timeout 只能由调用层在批次之间检查。
-            vectors = [row.tolist() for row in self.local.embed(texts, batch_size=self.config.embedding_batch_size)]
+            with _LOCAL_INFERENCE_LOCK:
+                vectors = [row.tolist() for row in self.local.embed(texts, batch_size=self.config.embedding_batch_size)]
         else:
             response = self.client.embeddings.create(
                 model=self.config.embedding_model, input=texts,

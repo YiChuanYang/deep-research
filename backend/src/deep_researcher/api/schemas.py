@@ -91,6 +91,8 @@ class RunStatusResponse(RunItem):
 
     next_nodes: list[str]
     active_task_id: int | None
+    # 本批参与任务包括正在执行和等待并发名额的任务，并非实时线程列表。
+    batch_task_ids: list[int] = Field(default_factory=list)
 
     planned_tasks: int
     selected_tasks: int

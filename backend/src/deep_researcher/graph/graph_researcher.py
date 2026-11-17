@@ -9,7 +9,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from filelock import FileLock, Timeout as FileLockTimeout
 from deep_researcher.tools.note_tool import NoteTool
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -56,6 +56,7 @@ class RunSnapshot:
     active_task_id: int | None
     graph_finished: bool
     report_iteration: ReportIteration | None = None
+    batch_task_ids: list[int] = field(default_factory=list)
 
     @property
     def selected_task_ids(self) -> list[int]:
@@ -80,7 +81,7 @@ class RunSnapshot:
 
 
 class GraphDeepResearcher:
-    """本地串行研究入口；同一实例按顺序调用。"""
+    """本地研究入口；研究内部可并发，同一入口实例仍按顺序调用。"""
 
     def __init__(
         self,
@@ -225,6 +226,9 @@ class GraphDeepResearcher:
                         },
                         # 这是图执行步数限制，不是业务任务数。
                         "recursion_limit": 1000,
+                        # 同步 custom stream 的队列等待也使用 executor；保留一条调度线程。
+                        # 实际业务并发仍由 ResearchNodes._task_gate 限制，单任务模式不会死锁。
+                        "max_concurrency": config.task_concurrency + 1,
                     }
 
                     snapshot = graph.get_state(
@@ -691,6 +695,7 @@ class GraphDeepResearcher:
             next_nodes=tuple(snapshot.next),
             active_task_id=values.get("active_task_id"),
             graph_finished=values.get("finished") is True,
+            batch_task_ids=list(values.get("parallel_task_ids", [])),
             report_iteration=(ReportIteration.model_validate(values["report_iteration"])
                               if values.get("report_iteration") is not None else None),
         )

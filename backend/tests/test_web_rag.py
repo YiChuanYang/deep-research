@@ -304,7 +304,7 @@ def test_graph_recovery_reuses_discovery_pages_and_index(tmp_path: Path) -> None
         researcher.run("发件箱研究", max_tasks=1)
     run_id = researcher.last_run_id
     snapshot = researcher.read_run(run_id)
-    assert snapshot.next_nodes == ("summarize",)
+    assert snapshot.next_nodes == ("parallel_summarize",)
     assert snapshot.state.todo_items[0].retrieval["stage"] == "retrieved"
     result = researcher.resume(run_id)
     assert result.report_markdown and calls["plan"] == 1 and calls["read"] == 1
@@ -356,4 +356,5 @@ def test_old_snapshot_preserves_old_workflow(tmp_path: Path) -> None:
     old = {"llm_provider": cfg.llm_provider, "llm_base_url": cfg.llm_base_url}
     restored = cfg.for_resume(old)
     assert not restored.enable_web_rag and restored.review_output_mode == "tool"
+    assert not restored.enable_parallel_tasks
     assert "embedding_api_key" not in cfg.snapshot()

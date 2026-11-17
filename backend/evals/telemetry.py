@@ -31,6 +31,7 @@ class RunTelemetry(logging.Handler):
         self.node_duration_s: dict[str, float] = {}
         self.node_calls: dict[str, int] = {}
         self.phase_duration_s: dict[str, float] = {}
+        self.parallel_wall_duration_s: dict[str, float] = {}
         self.rag_step_duration_s: dict[str, float] = {}
         self.rag_step_calls: dict[str, int] = {}
         self.rag_cache_hits: dict[str, int] = {}
@@ -42,6 +43,12 @@ class RunTelemetry(logging.Handler):
             return
         event = getattr(record, "event", None)
         with self._guard:
+            if event == "parallel_phase_completed":
+                phase = getattr(record, "parallel_phase", None)
+                duration = getattr(record, "duration_s", None)
+                if (isinstance(phase, str) and type(duration) in {int, float}
+                        and math.isfinite(duration) and duration >= 0):
+                    self.parallel_wall_duration_s[phase] = self.parallel_wall_duration_s.get(phase, 0.0) + duration
             if event == "web_rag_step_completed":
                 step, duration = getattr(record, "rag_step", None), getattr(record, "duration_s", None)
                 if (isinstance(step, str) and step and type(duration) in {int, float}
@@ -105,6 +112,7 @@ class RunTelemetry(logging.Handler):
                 "report_iteration": dict(self.report_iteration_counts),
                 "web_rag": dict(self.web_rag_counts),
                 "phase_duration_s": {key: round(value, 6) for key, value in self.phase_duration_s.items()},
+                "parallel_wall_duration_s": {key: round(value, 6) for key, value in self.parallel_wall_duration_s.items()},
                 "node_duration_s": {key: round(value, 6) for key, value in self.node_duration_s.items()},
                 "node_calls": dict(self.node_calls),
                 "rag_step_duration_s": {key: round(value, 6) for key, value in self.rag_step_duration_s.items()},

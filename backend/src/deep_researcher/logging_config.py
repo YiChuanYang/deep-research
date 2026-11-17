@@ -47,6 +47,7 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "services.reporter": ("📝", "services.reporter"),
     "services.report_reflection": ("🪞", "services.review"),
     "graph.report_cycle": ("🔄", "graph.report_cycle"),
+    "graph.parallel_tasks": ("🧵", "graph.parallel"),
     "services.note_service": ("📒", "services.note"),
     "services.tool_events": ("🪝", "listeners.tools"),
     "agents.simple_agent": ("🤖", "agents.simple"),
@@ -291,6 +292,19 @@ class ConsoleFormatter(logging.Formatter):
             "prepare_report_revision": "安排改进",
             "finalize_report": "报告定稿",
             "block_report": "停止交付",
+            "parallel_prepare": "安排任务",
+            "parallel_rewrite": "并发改写",
+            "parallel_merge_rewrite": "汇总查询",
+            "parallel_lookup": "检查资料",
+            "parallel_merge_lookup": "汇总覆盖",
+            "parallel_collect": "收集网页",
+            "parallel_merge_collect": "汇总网页",
+            "parallel_index": "统一索引",
+            "parallel_retrieve": "并发取证",
+            "parallel_register": "登记证据",
+            "parallel_summarize": "并发摘要",
+            "parallel_merge_summary": "汇总摘要",
+            "parallel_save": "保存任务",
         }.get(stage, stage)
         message = " ↵ ".join(_clean_message(record.getMessage()).splitlines())
         display_icon = icon if self.emoji else "-"

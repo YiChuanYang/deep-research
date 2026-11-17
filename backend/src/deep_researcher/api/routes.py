@@ -170,6 +170,7 @@ def get_research_status(
         execution=execution,
         next_nodes=list(snapshot.next_nodes),
         active_task_id=snapshot.active_task_id,
+        batch_task_ids=snapshot.batch_task_ids,
         planned_tasks=len(tasks),
         selected_tasks=len(selected),
         completed_tasks=sum(

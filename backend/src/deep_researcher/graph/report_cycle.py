@@ -111,6 +111,11 @@ def prepare_round(
         and not cycle.supplements[-1].novel_evidence_ids
     )
     invalid_questions: list[str] = []
+    parallel = config.enable_parallel_tasks and config.enable_web_rag
+    if parallel and cycle.supplements:
+        previous = [s for s in cycle.supplements if s.revision == cycle.supplements[-1].revision]
+        no_progress = all(s.search_completed for s in previous) and not any(s.novel_evidence_ids for s in previous)
+    planned = False
     for issue in draft.review.issues:
         if issue.kind != "missing_evidence":
             continue
@@ -130,7 +135,10 @@ def prepare_round(
             or normalized(issue.question) in prior_questions
         ):
             continue
-        cycle.revision += 1
+        # 同一轮多个缺口只增加一次报告修订轮次，追加任务仍受总预算限制。
+        if not planned:
+            cycle.revision += 1
+        planned = True
         task_id = max((task.id for task in state.todo_items), default=0) + 1
         state.todo_items.append(
             TodoItem(
@@ -163,6 +171,11 @@ def prepare_round(
                 "revision": cycle.revision,
             },
         )
+        prior_queries.add(normalized(issue.query))
+        prior_questions.add(normalized(issue.question))
+        if not parallel:
+            return
+    if planned:
         return
     if any(issue.kind != "missing_evidence" for issue in draft.review.issues):
         cycle.revision += 1

@@ -16,6 +16,7 @@ const processed = computed(() => props.progress.completed_tasks + props.progress
 const percentage = computed(() => props.progress.selected_tasks ? Math.min(100, processed.value / props.progress.selected_tasks * 100) : 0);
 const executing = computed(() => !props.error && !hidden.value && !props.progress.report_ready && props.progress.execution === 'executing');
 const activeTask = computed(() => props.progress.tasks.find(task => task.id === props.progress.active_task_id));
+const batchTasks = computed(() => props.progress.batch_task_ids ?? []);
 const evidenceCount = computed(() => props.progress.tasks.reduce((sum, task) => sum + task.evidence_count, 0));
 const citationCount = computed(() => props.progress.tasks.reduce((sum, task) => sum + task.citation_count, 0));
 const steps = ['任务规划', '检索与摘要', '报告汇总', '报告就绪'];
@@ -26,7 +27,7 @@ const stepIndex = computed(() => {
   if (value.next_nodes.some(node => ['report', 'save_report', 'reflect_report', 'prepare_report_revision', 'finalize_report', 'block_report'].includes(node))) return 2;
   return value.tasks.length ? 1 : 0;
 });
-const checkpoint = computed(() => props.progress.next_nodes.map(nodeLabel).join(' / '));
+const checkpoint = computed(() => [...new Set(props.progress.next_nodes)].map(nodeLabel).join(' / '));
 const syncText = computed(() => {
   if (props.error) return '同步中断';
   if (hidden.value) return '页面隐藏 · 暂停同步';
@@ -88,6 +89,7 @@ onBeforeUnmount(() => { window.clearInterval(timer); document.removeEventListene
       <p v-if="progress.report_ready" class="live-title">报告已生成</p>
       <p v-else-if="progress.execution === 'queued'" class="live-title">等待后台执行</p>
       <p v-else-if="activeTask && stepIndex === 1" class="live-title">任务 {{ activeTask.id }} · {{ activeTask.title }}</p>
+      <p v-else-if="batchTasks.length && stepIndex === 1" class="live-title">本批 {{ batchTasks.length }} 个任务 · 分阶段并发处理</p>
       <p v-else class="live-title">{{ steps[stepIndex] }}</p>
       <p v-if="checkpoint && !progress.report_ready" class="checkpoint-label">检查点待执行：{{ checkpoint }}</p>
       <div v-if="executing" class="activity-track" aria-hidden="true"><span></span></div>
@@ -109,7 +111,7 @@ onBeforeUnmount(() => { window.clearInterval(timer); document.removeEventListene
 
     <div v-if="!progress.tasks.length" class="planning-empty"><LoaderCircle v-if="executing" class="spin" :size="24" /><Circle v-else :size="24" /><h3>等待研究计划</h3></div>
     <ol v-else class="task-list">
-      <li v-for="task in progress.tasks" :key="task.id" :class="{ muted: !task.selected, active: executing && task.id === progress.active_task_id && task.status === 'running' }">
+      <li v-for="task in progress.tasks" :key="task.id" :class="{ muted: !task.selected, active: executing && (task.id === progress.active_task_id || batchTasks.includes(task.id)) && task.status === 'running' }">
         <span class="task-symbol"><Check v-if="task.status === 'completed'" :size="17" /><Minus v-else-if="task.status === 'skipped' || !task.selected" :size="16" /><LoaderCircle v-else-if="task.status === 'running' && executing" :size="17" class="spin" /><Circle v-else :size="15" /></span>
         <div class="task-content"><span class="task-index">任务 {{ task.id.toString().padStart(2, '0') }}</span><h3>{{ task.title }}</h3><div class="task-metrics"><span>{{ task.evidence_count }} 条证据</span><span>{{ task.citation_count }} 条引用</span></div>
           <div v-if="task.retrieval?.stage" class="task-metrics"><span>{{ task.retrieval.discovered ?? 0 }} 个候选网页</span><span>{{ task.retrieval.full_pages ?? 0 }} 页正文</span><span>{{ task.retrieval.chunks ?? 0 }} 个文本块</span><span v-if="task.retrieval.local_sufficient">复用已有资料</span></div>

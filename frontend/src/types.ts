@@ -11,7 +11,7 @@ export interface TaskProgress {
   notices?: string[];
 }
 export interface RunProgress extends RunItem {
-  execution: 'idle' | 'queued' | 'executing'; next_nodes: string[]; active_task_id: number | null;
+  execution: 'idle' | 'queued' | 'executing'; next_nodes: string[]; active_task_id: number | null; batch_task_ids?: number[];
   planned_tasks: number; selected_tasks: number; completed_tasks: number; skipped_tasks: number;
   tasks: TaskProgress[]; report_ready: boolean; requires_recovery_confirmation: boolean; error_message: string | null;
   report_iteration?: ReportIterationProgress | null;

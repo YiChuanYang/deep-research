@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
+from threading import BoundedSemaphore
 from time import perf_counter
 from typing import Any
 from collections.abc import Generator
@@ -22,8 +24,11 @@ class MyLLM:
     def __init__(
         self,
         config: Configuration | None = None,
+        *,
+        request_gate: BoundedSemaphore | None = None,
     ) -> None:
         self.config = config if config is not None else get_config()
+        self._request_gate = request_gate
         self.config.require_llm()
 
         self.llm_provider = self.config.llm_provider
@@ -101,7 +106,9 @@ class MyLLM:
 
         started_at = perf_counter()
 
-        response = self.client.chat.completions.create(**request)
+        # SDK 的网络重试也占用这个名额，避免失败时放大并发请求。
+        with getattr(self, "_request_gate", None) or nullcontext():
+            response = self.client.chat.completions.create(**request)
 
         if not response.choices:
             raise ModelOutputError("模型响应中没有 choices")
