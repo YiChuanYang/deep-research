@@ -16,6 +16,9 @@ workspace/
 demo/
 !/backend/demo/
 /backend/demo/*
+!/backend/demo/demo_deepresearcher.py
+!/backend/demo/demo_graphresearcher.py
+!/backend/demo/demo_logging.py
 !/backend/demo/demo_report_iteration.py
 notes/
 logs/

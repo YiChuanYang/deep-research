@@ -2,6 +2,8 @@
 
 本文记录 v2 回退时的基线。当前新增的可关闭报告反思与补充研究流程见 [报告迭代说明](report_iteration.md)；关闭 `ENABLE_REPORT_REFLECTION` 后沿用本文的主流程。
 
+后续入口整理：正式入口统一为 `deep_researcher.graph.graph_researcher.GraphDeepResearcher`，下文提到的旧手写 `deep_researcher.py`、`repository.py` 已从主源码移除。本文的回退经过和验收结果保留为历史记录；当前入口见 [项目说明](../../README.md)，历史测试留待后续重做。
+
 ## 本次恢复到了哪里
 
 后端以 `evals/runs/20261112T142932Z-0b427b5c/source_snapshot/` 为准。该批次标签是 `query-rewrite-citation-v2`，评测记录的源码指纹为 `a79e3ad70d8c790915a52fec75ed2ea32a28c8497f144d3544441288db25da20`。

@@ -60,6 +60,7 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "graph_researcher": ("🚀", "research.graph"),
     "graph_nodes": ("🧭", "graph.nodes"),
     "graph.graph_researcher": ("🚀", "research.graph"),
+    "graph.graph_repository": ("🗄️", "storage.graph"),
     "graph.graph_nodes": ("🧭", "graph.nodes"),
     "services.evidence_service": ("🧾", "services.evidence"),
     "api.app": ("🌐", "api.app"),
