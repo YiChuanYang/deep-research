@@ -57,6 +57,20 @@ def ratio(numerator: int, denominator: int) -> dict[str, Any]:
     }
 
 
+def stage_duration_stats(rows: list[dict[str, Any]], field: str) -> dict[str, dict[str, Any]]:
+    """对每次研究内已累计的阶段耗时计算跨研究分布。"""
+    samples: dict[str, list[float]] = defaultdict(list)
+    for row in rows:
+        telemetry = row.get("telemetry")
+        values = telemetry.get(field) if isinstance(telemetry, dict) else None
+        if not isinstance(values, dict):
+            continue
+        for name, value in values.items():
+            if isinstance(name, str) and numeric(value) and value >= 0:
+                samples[name].append(float(value))
+    return {name: stats(values) for name, values in sorted(samples.items())}
+
+
 def safe_attempt_dir(batch: Path, entry: dict[str, Any]) -> Path:
     expected = f"attempts/{entry['case_id']}/trial-{entry['trial']:03d}"
     if entry["path"] != expected:
@@ -196,6 +210,10 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         len(completed),
     )
     efficiency["cost"] = None
+    stage_durations = {
+        "phases": stage_duration_stats(rows, "phase_duration_s"),
+        "nodes": stage_duration_stats(rows, "node_duration_s"),
+    }
     evidence_counts = Counter(row["score"]["evidence_sufficiency"] for row in reviewed)
     diagnostics = {
         key: stats([row.get("counts", {}).get(key) for row in rows])
@@ -214,7 +232,8 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "evidence_sufficiency": {
             key: evidence_counts[key] for key in ["enough", "limited", "insufficient", "uncertain"]
         },
-        "efficiency": efficiency, "diagnostics": diagnostics,
+        "efficiency": efficiency, "stage_durations": stage_durations,
+        "diagnostics": diagnostics,
         "report_iteration": {"observed_researches": observed_iterations,
                              "missing_researches": len(rows) - observed_iterations,
                              "counts": dict(iteration_counts)},
@@ -265,11 +284,25 @@ def markdown(summary: dict[str, Any]) -> str:
     for name, value in summary["efficiency"].items():
         if isinstance(value, dict) and "n" in value:
             lines.append(f"| {name} | {value['n']} | {display(value['mean'])} | {display(value['median'])} | {display(value['p95'])} |")
+    lines += [
+        "",
+        "图阶段耗时按每次研究先累计同阶段节点，再跨研究计算分布；失败和中断研究也计入已完成阶段。",
+        "未执行或未记录的阶段不补零；阶段汇总与节点汇总是同一组耗时的两种视图，不能相加。",
+        "",
+        "| 范围 | 阶段 / 节点 | 有记录研究数 | 均值(s) | 中位数(s) | P95(s) |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for scope, label in [("phases", "研究阶段"), ("nodes", "图节点")]:
+        for name, value in summary["stage_durations"][scope].items():
+            lines.append(
+                f"| {label} | {name} | {value['n']} | {display(value['mean'])} | "
+                f"{display(value['median'])} | {display(value['p95'])} |"
+            )
     usage = summary["efficiency"]["token_usage_complete"]
     lines += ["", f"完整 token 用量：{usage['numerator']} / {usage['denominator']}，{display(usage['value'], True)}。",
               "total_tokens 只统计 usage 完整的研究；reported_tokens 是已观察到的部分用量。费用未计算。",
               "complete 表示评审者声明完整枚举结论；sampled 是抽查。引用支持不等于外部事实正确。", "",
-              "证据充足性（人工分类）：" + "；".join(f"{key}={value}" for key, value in summary["evidence_sufficiency"].items()) + "。", "",
+              "证据充足性（评审分类，评审者见 review.json）：" + "；".join(f"{key}={value}" for key, value in summary["evidence_sufficiency"].items()) + "。", "",
               "| 诊断数量 | 有效次数 | 均值 |", "|---|---:|---:|"]
     for name, value in summary["diagnostics"].items():
         lines.append(f"| {name} | {value['n']} | {display(value['mean'])} |")
@@ -279,7 +312,7 @@ def markdown(summary: dict[str, Any]) -> str:
     lines.extend(f"| {key} | {value} |" for key, value in iteration["counts"].items())
     lines += ["", "包含失败研究的已记录事件；模型评审完成不代表质量提升。草稿与补充任务见 report_iterations.json。"]
     lines += ["", "诊断数量较多不自动表示质量较高。", "",
-              "| 题目 | 次数 | 执行 | 导出 | 人工评分 | 详情 |", "|---|---:|---|---|---|---|"]
+              "| 题目 | 次数 | 执行 | 导出 | 评审状态 | 详情 |", "|---|---:|---|---|---|---|"]
     for row in summary["rows"]:
         lines.append(
             f"| {row['case_id']} | {row['trial']} | {row['execution_status']} | "

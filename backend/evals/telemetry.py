@@ -28,12 +28,25 @@ class RunTelemetry(logging.Handler):
         self.report_ttft_s: list[float] = []
         self.report_iteration_counts: dict[str, int] = {}
         self.web_rag_counts: dict[str, int] = {}
+        self.node_duration_s: dict[str, float] = {}
+        self.node_calls: dict[str, int] = {}
+        self.phase_duration_s: dict[str, float] = {}
 
     def emit(self, record: logging.LogRecord) -> None:
         if getattr(record, "run_id", None) != self.run_id:
             return
         event = getattr(record, "event", None)
         with self._guard:
+            if event == "graph_node_completed":
+                duration = getattr(record, "duration_s", None)
+                node = getattr(record, "node", None)
+                phase = getattr(record, "research_stage", None)
+                if (type(duration) in {int, float} and math.isfinite(duration) and duration >= 0
+                        and isinstance(node, str) and node):
+                    self.node_duration_s[node] = self.node_duration_s.get(node, 0.0) + float(duration)
+                    self.node_calls[node] = self.node_calls.get(node, 0) + 1
+                    if isinstance(phase, str) and phase:
+                        self.phase_duration_s[phase] = self.phase_duration_s.get(phase, 0.0) + float(duration)
             if isinstance(event, str) and (event.startswith("web_") or event == "embedding_completed"):
                 self.web_rag_counts[event] = self.web_rag_counts.get(event, 0) + 1
             if event in {"report_review_started", "report_review_completed", "report_review_protocol_invalid",
@@ -75,6 +88,9 @@ class RunTelemetry(logging.Handler):
                 "cost": None,
                 "report_iteration": dict(self.report_iteration_counts),
                 "web_rag": dict(self.web_rag_counts),
+                "phase_duration_s": {key: round(value, 6) for key, value in self.phase_duration_s.items()},
+                "node_duration_s": {key: round(value, 6) for key, value in self.node_duration_s.items()},
+                "node_calls": dict(self.node_calls),
             }
 
 

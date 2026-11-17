@@ -217,6 +217,8 @@ $candidate = "C:\实际路径\backend\evals\runs\候选批次"
 | reported_tokens | 所有已返回合法 usage.total_tokens 的模型响应之和，可能仅为部分用量 |
 | total_tokens | 只有每次模型请求都完成且全部返回 usage 时才给出总和，否则 null |
 | report_ttft_s | 当前报告流式调用开始，到收到第一个非空 content 分片的秒数；不是从用户提问开始计时 |
+| phase_duration_s / node_duration_s | LangGraph 节点 action 的单调时钟耗时；每次研究先按研究阶段/节点累加，同一阶段的多次任务会求和，再在批次中统计均值、中位数和 P95。包含正常返回及抛出普通异常的动作耗时，不等于整次研究总耗时 |
+| node_calls | 本次研究已计时的各节点执行次数，包括普通异常失败；可用 node_duration_s ÷ node_calls 查看单次执行平均时间 |
 | token_usage_complete | 完整获取 token usage 的已完成研究次数 ÷ 全部已完成研究次数 |
 | cost | 当前为 null，未计算费用 |
 
@@ -225,6 +227,12 @@ $candidate = "C:\实际路径\backend\evals\runs\候选批次"
 没有模型调用时，0 次调用、0 token 是合法结果；遥测根本没有建立时是未知。费用还需要具体供应商价格、输入/输出/缓存等计费分项，本实现不根据总 token 猜测金额。
 
 效率汇总提供样本数、均值、中位数、P95、最小值和最大值。P95 将数值排序，取 (n-1)×0.95 的位置线性插值，小样本不适合解释为稳定尾延迟。主要耗时统计使用成功研究，另列全部结束研究（完成/失败/中断）的耗时；调用量、token 和 TTFT 的批次统计使用已完成研究。失败试验的原始用量仍保留在 attempt.json。
+
+阶段耗时保存在每题 `attempt.json` 的 `telemetry.phase_duration_s`、`telemetry.node_duration_s`、`telemetry.node_calls` 中；批次 `summary.json` 的 `stage_durations` 和 `summary.md` 的图阶段耗时表负责汇总。旧批次缺失这些字段时仍可读取，但缺失值不填零；未执行某节点的研究不进入该节点均值分母，因此需同时查看“有记录研究数”。
+
+`phase_duration_s` 的 `plan`、`tasks`、`report`、`save_report` 是粗粒度分类；`node_duration_s` 可进一步区分网页发现、正文读取、索引、取证、摘要、报告生成和反思。两种视图来自同一批节点事件，不能相加。只消费 `graph_node_completed`，不会把服务内部或模型调用的耗时再次累加。
+
+这里记录的是墙钟经过时间，包含动作内部的 I/O 等待和重试，不是 CPU 时间。节点动作之外的图调度、检查点持久化、状态编码与入口开销仍由 `research_duration_s` 覆盖。中断时仅保留已经记录的节点：`KeyboardInterrupt` 或进程被强制终止时，尚未返回的动作没有节点耗时，不能把部分统计当成完整耗时。如果未来图内并行执行，节点累计时间可能超过整次研究耗时，届时不能直接将相加结果解释为关键路径或占比。
 
 对照效率只使用双方都完成且该指标均有效的配对，所以还必须同时查看失败率和排除数。
 

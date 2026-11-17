@@ -183,13 +183,26 @@ class ResearchNodes:
                 event_data = {"node": name, "task_id": task_id}
                 writer({"type": "node.started", "data": event_data})
 
+                started_at = perf_counter()
                 try:
                     updates = action(
                         state,
                         graph_state,
                     )
                 except Exception as exc:
-                    writer({"type": "node.failed", "data": event_data})
+                    duration_s = round(perf_counter() - started_at, 6)
+                    writer({"type": "node.failed", "data": {**event_data, "duration_s": duration_s}})
+                    logger.info(
+                        "节点失败 · %s · 耗时=%.3fs",
+                        name,
+                        duration_s,
+                        extra={
+                            "event": "graph_node_completed",
+                            "node": name,
+                            "node_status": "failed",
+                            "duration_s": duration_s,
+                        },
+                    )
                     log_exception_once(
                         logger,
                         "节点失败 · %s",
@@ -201,16 +214,21 @@ class ResearchNodes:
                     )
                     raise
 
+                duration_s = round(perf_counter() - started_at, 6)
                 logger.debug(
-                    "节点返回 · %s",
+                    "节点返回 · %s · 耗时=%.3fs",
                     name,
+                    duration_s,
                     extra={
-                        "event": "graph_node_returned",
+                        "event": "graph_node_completed",
+                        "node": name,
+                        "node_status": "completed",
+                        "duration_s": duration_s,
                     },
                 )
 
                 # returned 表示函数已返回；持久化是否完成仍以检查点为准。
-                writer({"type": "node.returned", "data": event_data})
+                writer({"type": "node.returned", "data": {**event_data, "duration_s": duration_s}})
 
                 # ** 解包合并字典。
                 # 返回更新后，LangGraph 才接收节点的新状态。

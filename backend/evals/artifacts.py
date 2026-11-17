@@ -101,9 +101,11 @@ def read_assessment(
     if report_path.read_text(encoding="utf-8") != state.structured_report:
         raise ValueError("report.md 已变化，与快照正文不一致")
     checks = inspect_state(state)
+    # 校验导出文件与当时冻结的原始字段，不能和新版本 dataclass 补出的
+    # 默认字段比较；旧证据没有 snapshot_id 等新增字段，但内容并未变化。
     if read_json(directory / "evidence.json") != {
-        "sources": {key: asdict(value) for key, value in state.sources.items()},
-        "evidence": {key: asdict(value) for key, value in state.evidence.items()},
+        "sources": snapshot["state"]["sources"],
+        "evidence": snapshot["state"]["evidence"],
     }:
         raise ValueError("evidence.json 与冻结快照不一致")
     if isinstance(checks["body"], str) and (

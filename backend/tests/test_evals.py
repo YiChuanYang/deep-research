@@ -228,6 +228,84 @@ def test_telemetry_unknown_usage_and_run_isolation():
     assert value["report_ttft_s"] == 0.2 and value["cost"] is None
 
 
+def test_telemetry_tracks_graph_node_and_phase_duration_by_run() -> None:
+    logger = logging.getLogger("deep_researcher.graph.test")
+    with collect_telemetry("target") as tracker:
+        with log_context(run_id="other", research_stage="tasks"):
+            logger.info("other run", extra={
+                "event": "graph_node_completed", "node": "summarize", "duration_s": 9.0,
+            })
+        with log_context(run_id="target", research_stage="tasks"):
+            logger.info("target run", extra={
+                "event": "graph_node_completed", "node": "summarize", "duration_s": 1.25,
+            })
+            logger.info("failed action", extra={
+                "event": "graph_node_completed", "node": "summarize", "node_status": "failed", "duration_s": 0.75,
+            })
+            # 动作内部调用耗时已经包含在节点耗时中，不能重复累计。
+            logger.info("nested service", extra={
+                "event": "model_response", "duration_s": 0.5,
+            })
+    value = tracker.snapshot()
+    assert value["node_duration_s"] == {"summarize": 2.0}
+    assert value["phase_duration_s"] == {"tasks": 2.0}
+    assert value["node_calls"] == {"summarize": 2}
+
+
+def test_stage_duration_summary_aggregates_each_research_once() -> None:
+    rows = [
+        {"case_id": "DR-001", "execution_status": "completed", "export_status": "completed",
+         "review_status": "pending", "research_duration_s": 10.0,
+         "telemetry": {"phase_duration_s": {"tasks": 3.0}, "node_duration_s": {"summarize": 2.0}}},
+        {"case_id": "DR-002", "execution_status": "failed", "export_status": "not_started",
+         "review_status": "not_available", "research_duration_s": 8.0,
+         "telemetry": {"phase_duration_s": {"tasks": 5.0}, "node_duration_s": {"summarize": 4.0}}},
+        {"case_id": "DR-003", "execution_status": "completed", "export_status": "completed",
+         "review_status": "pending", "research_duration_s": 6.0, "telemetry": {}},
+    ]
+    value = aggregate(rows)["stage_durations"]
+    assert value["phases"]["tasks"]["n"] == 2
+    assert value["phases"]["tasks"]["mean"] == 4.0
+    assert value["nodes"]["summarize"]["mean"] == 3.0
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_node_action_records_duration_without_swallowing_failure(
+    fails: bool, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deep_researcher.graph import graph_nodes
+    from deep_researcher.graph.graph_state import ResearchGraphState, encode_state
+
+    times = iter([10.0, 12.5])
+    emitted: list[dict[str, Any]] = []
+    monkeypatch.setattr(graph_nodes, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(graph_nodes, "get_stream_writer", lambda: emitted.append)
+    nodes = ResearchNodes(Configuration(enable_notes=False), "test-execution")
+    state: ResearchGraphState = {
+        "version": 1, "payload": encode_state(SummaryState(run_id="target")),
+        "max_tasks": 1, "active_task_id": None, "finished": False,
+    }
+    failure = RuntimeError("action failed")
+
+    def action(state: SummaryState, graph_state: ResearchGraphState) -> dict[str, Any]:
+        if fails:
+            raise failure
+        return {}
+
+    with collect_telemetry("target") as tracker:
+        execute = nodes.bind("plan", action)
+        if fails:
+            with pytest.raises(RuntimeError) as raised:
+                execute(state)
+            assert raised.value is failure
+        else:
+            execute(state)
+    assert tracker.snapshot()["node_duration_s"] == {"plan": 2.5}
+    assert tracker.snapshot()["node_calls"] == {"plan": 1}
+    assert emitted[-1]["type"] == ("node.failed" if fails else "node.returned")
+    assert emitted[-1]["data"]["duration_s"] == 2.5
+
+
 def test_real_graph_suite_and_fixed_review(dataset_path: Path, tmp_path: Path):
     batch = run_offline(dataset_path, tmp_path, repeats=2)
     summary = read_json(batch / "summary.json")
@@ -237,6 +315,8 @@ def test_real_graph_suite_and_fixed_review(dataset_path: Path, tmp_path: Path):
     assert summary["automatic"]["overall"]["pass_rate"]["value"] == 1
     assert summary["efficiency"]["total_tokens"]["mean"] == 30
     assert summary["efficiency"]["model_requests"]["mean"] == 1
+    assert summary["stage_durations"]["phases"]["plan"]["n"] == 4
+    assert summary["stage_durations"]["nodes"]["report"]["n"] == 4
     assert len({row["run_id"] for row in summary["rows"]}) == 4
     manifest = read_json(batch / "manifest.json")
     assert "llm_api_key" not in manifest["config"]
@@ -292,6 +372,28 @@ def test_export_failure_is_not_execution_failure(dataset_path: Path, tmp_path: P
     counts = read_json(batch / "summary.json")["counts"]
     assert counts["completed"] == counts["export_failed"] == 1
     assert counts["failed"] == counts["exported"] == 0
+
+
+def test_legacy_evidence_export_remains_valid_after_schema_additions(
+    dataset_path: Path, tmp_path: Path,
+) -> None:
+    from evals.artifacts import read_assessment
+
+    batch = run_offline(dataset_path, tmp_path, case_ids=["DR-001"])
+    directory = batch / "attempts/DR-001/trial-001"
+    snapshot = read_json(directory / "snapshot.json")
+    evidence = read_json(directory / "evidence.json")
+    for records in [snapshot["state"]["evidence"], evidence["evidence"]]:
+        for item in records.values():
+            for key in ["snapshot_id", "chunk_id", "section", "start", "end", "content_hash"]:
+                item.pop(key, None)
+    write_json(directory / "snapshot.json", snapshot)
+    write_json(directory / "evidence.json", evidence)
+    assert read_assessment(directory)["review_status"] == "pending"
+    evidence["evidence"]["E0001"]["text"] = "changed source text"
+    write_json(directory / "evidence.json", evidence)
+    with pytest.raises(ValueError, match="evidence.json"):
+        read_assessment(directory)
 
 
 def test_macro_mean_does_not_overweight_repeated_question():
