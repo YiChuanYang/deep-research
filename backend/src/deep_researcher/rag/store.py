@@ -8,7 +8,7 @@ import sqlite3
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 def digest(text: str) -> str:
@@ -73,11 +73,7 @@ class WebRagStore:
                        (page.snapshot_id, page.url, json.dumps(asdict(page), ensure_ascii=False)))
 
     def pages(self, ids: list[str] | None = None) -> list[PageSnapshot]:
-        with closing(self._connect()) as db:
-            rows = db.execute("SELECT data FROM pages ORDER BY rowid").fetchall()
-        wanted = set(ids) if ids is not None else None
-        pages = [PageSnapshot(**json.loads(row[0])) for row in rows]
-        return [p for p in pages if wanted is None or p.snapshot_id in wanted]
+        return [PageSnapshot(**json.loads(data)) for data in self._read_rows("pages", ids)]
 
     def save_chunks(self, chunks: list[TextChunk]) -> None:
         with closing(self._connect()) as db, db:
@@ -86,19 +82,36 @@ class WebRagStore:
             ])
 
     def chunks(self, page_ids: list[str] | None = None) -> list[TextChunk]:
-        wanted = set(page_ids) if page_ids is not None else None
+        return [TextChunk(**json.loads(data)) for data in self._read_rows("chunks", page_ids)]
+
+    def _read_rows(self, table: Literal["pages", "chunks"], ids: list[str] | None) -> list[str]:
+        """在 SQL 中筛选，分批查询后按 rowid 还原原有稳定顺序。"""
+        column = {"pages": "id", "chunks": "page_id"}[table]
+        if ids == []:
+            return []
         with closing(self._connect()) as db:
-            rows = db.execute("SELECT data FROM chunks ORDER BY rowid").fetchall()
-        chunks = [TextChunk(**json.loads(row[0])) for row in rows]
-        return [c for c in chunks if wanted is None or c.snapshot_id in wanted]
+            if ids is None:
+                return [row[0] for row in db.execute(f"SELECT data FROM {table} ORDER BY rowid")]
+            unique_ids = list(dict.fromkeys(ids))
+            rows: list[tuple[int, str]] = []
+            # 参数数量保持低于旧 SQLite 的 999 上限；值始终通过占位符绑定。
+            for offset in range(0, len(unique_ids), 400):
+                group = unique_ids[offset:offset + 400]
+                marks = ",".join("?" for _ in group)
+                rows.extend(db.execute(
+                    f"SELECT rowid, data FROM {table} WHERE {column} IN ({marks})", group,
+                ).fetchall())
+        return [data for _, data in sorted(rows)]
 
     def vectors(self, keys: list[str]) -> dict[str, list[float]]:
         result: dict[str, list[float]] = {}
+        unique_keys = list(dict.fromkeys(keys))
         with closing(self._connect()) as db:
-            for key in keys:
-                row = db.execute("SELECT data FROM vectors WHERE key=?", (key,)).fetchone()
-                if row:
-                    result[key] = json.loads(row[0])
+            for offset in range(0, len(unique_keys), 400):
+                group = unique_keys[offset:offset + 400]
+                marks = ",".join("?" for _ in group)
+                rows = db.execute(f"SELECT key, data FROM vectors WHERE key IN ({marks})", group)
+                result.update((key, json.loads(data)) for key, data in rows)
         return result
 
     def save_vectors(self, values: dict[str, list[float]]) -> None:

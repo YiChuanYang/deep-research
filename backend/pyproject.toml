@@ -26,7 +26,13 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "jieba>=0.42.1",
     "numpy>=1.26",
-    "fastembed>=0.7.0",
+    "fastembed>=0.9.1,<0.10; sys_platform != 'win32'",
+    # Windows 使用 GPU 运行时；它也提供 CPU 执行器，避免两个 ONNX 包覆盖同名模块。
+    "fastembed-gpu>=0.9.1,<0.10; sys_platform == 'win32'",
+    # 固定 CUDA 12 系列，在项目环境中提供 DLL，不依赖系统 CUDA Toolkit。
+    "onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27; sys_platform == 'win32'",
+    # 12.9.3 暂无 Windows wheel，固定已有 Windows 构建的版本。
+    "nvidia-cublas-cu12==12.9.2.10; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

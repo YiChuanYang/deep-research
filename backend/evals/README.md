@@ -249,3 +249,9 @@ planned_tasks、completed_tasks、skipped_tasks、sources、evidence、report_ci
 ```
 
 评测测试覆盖题集重复/分组隔离、手工评分计算、无效评分、零分母、未知正文边界、token 缺失、真实图与 SQLite 导出、失败/中断保留、导出失败、题目等权及配对对照。不请求真实模型或搜索服务。
+
+## RAG 局部性能回放
+
+向量设备、分批编码、BM25 缓存与两种重排输出格式可以独立回放，无需每次重跑完整研究。
+命令与缓存条件见 [RAG 提速说明](../docs/rag-performance.md)，本轮结果见 [实测记录](../docs/rag-speed-results.md)。
+评测产物中的 `rag_step_duration_s`、`rag_step_calls`、`rag_cache_hits` 和新编码计数用于定位内部开销；内部步骤包含在图节点计时中，不能相加。

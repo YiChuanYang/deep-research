@@ -47,6 +47,8 @@ SNAPSHOT_FIELDS = {
     "embedding_model", "embedding_base_url", "embedding_dimensions",
     "enable_embeddings", "enable_rerank", "review_output_mode",
     "embedding_backend", "embedding_cache_dir",
+    "embedding_device", "embedding_threads", "embedding_batch_size",
+    "rerank_include_reason",
 }
 
 
@@ -113,11 +115,17 @@ class Configuration(BaseModel):
     embedding_backend: Literal["local", "api"] = "local"
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     embedding_cache_dir: str = "./data/models"
+    # auto 优先验证 CUDA；不可用时明确记录 CPU 回退，cuda 则要求 GPU 可用。
+    embedding_device: Literal["auto", "cpu", "cuda"] = "auto"
+    embedding_threads: int = Field(default=2, ge=1, le=32)
+    embedding_batch_size: int = Field(default=16, ge=1, le=128)
     embedding_base_url: str | None = None
     embedding_api_key: SecretStr | None = Field(default=None, repr=False)
     embedding_dimensions: int = Field(default=512, ge=1, le=4096)
     enable_embeddings: bool = True
     enable_rerank: bool = True
+    # 常规重排只输出编号和分数；排查证据选择时再开启自然语言理由。
+    rerank_include_reason: bool = False
     review_output_mode: Literal["json", "tool"] = "json"
 
     # 笔记与摘要配置。
@@ -251,6 +259,8 @@ class Configuration(BaseModel):
         saved.setdefault("enable_report_reflection", False)
         saved.setdefault("enable_web_rag", False)
         saved.setdefault("review_output_mode", "tool")
+        # 旧研究继续使用原重排协议，避免恢复时改变生成要求。
+        saved.setdefault("rerank_include_reason", True)
         restored = type(self).model_validate({
             **self.model_dump(),
             **saved,

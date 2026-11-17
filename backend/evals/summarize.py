@@ -213,6 +213,7 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     stage_durations = {
         "phases": stage_duration_stats(rows, "phase_duration_s"),
         "nodes": stage_duration_stats(rows, "node_duration_s"),
+        "rag_steps": stage_duration_stats(rows, "rag_step_duration_s"),
     }
     evidence_counts = Counter(row["score"]["evidence_sufficiency"] for row in reviewed)
     diagnostics = {
@@ -287,12 +288,12 @@ def markdown(summary: dict[str, Any]) -> str:
     lines += [
         "",
         "图阶段耗时按每次研究先累计同阶段节点，再跨研究计算分布；失败和中断研究也计入已完成阶段。",
-        "未执行或未记录的阶段不补零；阶段汇总与节点汇总是同一组耗时的两种视图，不能相加。",
+        "未记录的步骤不补零；研究阶段、图节点和 RAG 内部步骤是嵌套计时，不能相加。",
         "",
         "| 范围 | 阶段 / 节点 | 有记录研究数 | 均值(s) | 中位数(s) | P95(s) |",
         "|---|---|---:|---:|---:|---:|",
     ]
-    for scope, label in [("phases", "研究阶段"), ("nodes", "图节点")]:
+    for scope, label in [("phases", "研究阶段"), ("nodes", "图节点"), ("rag_steps", "RAG 步骤")]:
         for name, value in summary["stage_durations"][scope].items():
             lines.append(
                 f"| {label} | {name} | {value['n']} | {display(value['mean'])} | "

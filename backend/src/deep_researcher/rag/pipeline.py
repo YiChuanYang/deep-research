@@ -16,7 +16,8 @@ from deep_researcher.llm.structured import parse_json, result_arguments
 from deep_researcher.models import EvidenceBatch, SummaryState
 from deep_researcher.rag.documents import chunk_page, clean_markdown, public_url
 from deep_researcher.rag.retrieval import EmbeddingClient, HybridRetriever
-from deep_researcher.rag.store import PageSnapshot, WebRagStore, digest
+from deep_researcher.rag.store import PageSnapshot, TextChunk, WebRagStore, digest
+from deep_researcher.rag.timing import rag_timer
 from deep_researcher.services.evidence_service import EvidenceService
 from deep_researcher.tools.search_tool import SearchTool
 
@@ -149,10 +150,27 @@ class WebRagPipeline:
         read = self.store.record(f"task:{task_id}:read")
         if read is None:
             raise ValueError("缺少正文读取记录")
-        chunks = [c for p in self.store.pages(read["page_ids"])
-                  for c in chunk_page(p, self.config.web_rag_chunk_chars, self.config.web_rag_overlap_chars)]
+        with rag_timer("chunk_prepare") as stats:
+            chunks: list[TextChunk] = []
+            reused = 0
+            for page in self.store.pages(read["page_ids"]):
+                # 快照内容固定，但分块参数可能变化，因此两者共同组成复用键。
+                chunk_key = f"chunks:v1:{page.snapshot_id}:{self.config.web_rag_chunk_chars}:{self.config.web_rag_overlap_chars}"
+                cached_chunks = self.store.record(chunk_key)
+                if cached_chunks is not None:
+                    existing = self.store.chunks([page.snapshot_id])
+                    ids = set(cached_chunks["ids"])
+                    page_chunks = [c for c in existing if c.chunk_id in ids]
+                    if len(page_chunks) != len(ids):
+                        raise ValueError("分块缓存记录不完整")
+                    reused += 1
+                else:
+                    page_chunks = chunk_page(page, self.config.web_rag_chunk_chars, self.config.web_rag_overlap_chars)
+                    self.store.save_chunks(page_chunks)
+                    self.store.save_record(chunk_key, {"ids": [c.chunk_id for c in page_chunks]})
+                chunks.extend(page_chunks)
+            stats["reused_pages"] = reused
         # 全部文本块保留供关键词检索；向量预算采用等距抽样，避免只覆盖页面开头。
-        self.store.save_chunks(chunks)
         cap = self.config.web_rag_max_chunks
         dense = chunks if len(chunks) <= cap else [chunks[i * (len(chunks) - 1) // (cap - 1)] for i in range(cap)]
         count, notices = self.retriever.index(dense)
@@ -182,10 +200,13 @@ class WebRagPipeline:
             selected, audit, notices = self.retriever.retrieve(query, chunks, all_pages, question=question)
             saved = {"selected": [r.chunk.chunk_id for r in selected], "audit": audit, "notices": notices}
             self.store.save_record(key, saved)
-        by_id = {c.chunk_id: c for c in self.store.chunks()}
+        # 首次检索直接复用已读语料；恢复旧选段时才需要查询历史快照。
+        by_id = {c.chunk_id: c for c in chunks}
+        if not set(saved["selected"]).issubset(by_id):
+            by_id = {c.chunk_id: c for c in self.store.chunks()}
         # 重放选段产物需要使用当时的快照，而不是最新缓存。
-        selected_pages = {p.snapshot_id: p for p in self.store.pages()}
         chosen = [by_id[k] for k in saved["selected"]]
+        selected_pages = {p.snapshot_id: p for p in self.store.pages(list({c.snapshot_id for c in chosen}))}
         rows = [{"url": selected_pages[c.snapshot_id].url, "title": selected_pages[c.snapshot_id].title,
                  "content": c.text,
                  "raw_content": c.text if selected_pages[c.snapshot_id].kind == "page_excerpt" else ""} for c in chosen]

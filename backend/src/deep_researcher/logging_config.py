@@ -36,6 +36,8 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "rag.pipeline": ("🌐", "rag.web"),
     "rag.retrieval": ("🧲", "rag.retrieve"),
     "rag.store": ("🗄️", "rag.store"),
+    "rag.embeddings": ("⚡", "rag.embed"),
+    "rag.timing": ("⏱️", "rag.timing"),
     "deep_researcher": ("🚀", "research"),
     "deep_researcher.task": ("📋", "research.task"),
     "services.planner": ("🧭", "services.planner"),

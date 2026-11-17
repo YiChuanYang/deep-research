@@ -31,12 +31,28 @@ class RunTelemetry(logging.Handler):
         self.node_duration_s: dict[str, float] = {}
         self.node_calls: dict[str, int] = {}
         self.phase_duration_s: dict[str, float] = {}
+        self.rag_step_duration_s: dict[str, float] = {}
+        self.rag_step_calls: dict[str, int] = {}
+        self.rag_cache_hits: dict[str, int] = {}
+        self.rag_new_vectors = 0
+        self.rag_cached_vectors = 0
 
     def emit(self, record: logging.LogRecord) -> None:
         if getattr(record, "run_id", None) != self.run_id:
             return
         event = getattr(record, "event", None)
         with self._guard:
+            if event == "web_rag_step_completed":
+                step, duration = getattr(record, "rag_step", None), getattr(record, "duration_s", None)
+                if (isinstance(step, str) and step and type(duration) in {int, float}
+                        and math.isfinite(duration) and duration >= 0):
+                    self.rag_step_duration_s[step] = self.rag_step_duration_s.get(step, 0.0) + duration
+                    self.rag_step_calls[step] = self.rag_step_calls.get(step, 0) + 1
+                    if getattr(record, "cache_hit", False) is True:
+                        self.rag_cache_hits[step] = self.rag_cache_hits.get(step, 0) + 1
+            if event == "web_embedding_index_completed":
+                self.rag_new_vectors += getattr(record, "new_vectors", 0)
+                self.rag_cached_vectors += getattr(record, "cached_vectors", 0)
             if event == "graph_node_completed":
                 duration = getattr(record, "duration_s", None)
                 node = getattr(record, "node", None)
@@ -91,6 +107,11 @@ class RunTelemetry(logging.Handler):
                 "phase_duration_s": {key: round(value, 6) for key, value in self.phase_duration_s.items()},
                 "node_duration_s": {key: round(value, 6) for key, value in self.node_duration_s.items()},
                 "node_calls": dict(self.node_calls),
+                "rag_step_duration_s": {key: round(value, 6) for key, value in self.rag_step_duration_s.items()},
+                "rag_step_calls": dict(self.rag_step_calls),
+                "rag_cache_hits": dict(self.rag_cache_hits),
+                "rag_new_vectors": self.rag_new_vectors,
+                "rag_cached_vectors": self.rag_cached_vectors,
             }
 
 
