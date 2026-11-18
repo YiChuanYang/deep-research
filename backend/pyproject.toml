@@ -33,6 +33,7 @@ dependencies = [
     "onnxruntime-gpu[cuda,cudnn]>=1.21,<1.27; sys_platform == 'win32'",
     # 12.9.3 暂无 Windows wheel，固定已有 Windows 构建的版本。
     "nvidia-cublas-cu12==12.9.2.10; sys_platform == 'win32'",
+    "scipy>=1.15.3",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +47,10 @@ build-backend = "setuptools.build_meta"
 # 修复3：修正包发现逻辑，适配你「src为源码根」的目录结构
 [tool.setuptools.package-dir]
 "" = "src"  # 声明：所有顶层包/模块都在 src 目录下
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
 
 [tool.setuptools.packages.find]
 where = ["src"]  # 在src目录下自动查找Python包（比如services）

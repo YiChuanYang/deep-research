@@ -1,0 +1,1471 @@
+[
+  {
+    "sample_id": "plan_001",
+    "topic": "GLM-4-Flash 免费额度与限流规则说明",
+    "category": "大模型-技术事实",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "免费额度与价格标准",
+      "限流规则与并发上限",
+      "超限后的报错与处置方式",
+      "长上下文与缓存的额外计费",
+      "与同档位模型的价格对比"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "GLM-4-Flash 每百万 token 价格与免费额度",
+        "core_query": "智谱 GLM-4-Flash 价格 免费额度 每百万tokens"
+      },
+      {
+        "task_id": 2,
+        "title": "输入与输出的差异化计价规则",
+        "core_query": "智谱开放平台 输入 输出 token 计价 差异 规则"
+      },
+      {
+        "task_id": 3,
+        "title": "RPM、TPM 与并发请求数的具体上限",
+        "core_query": "智谱 API RPM TPM 并发 上限 数值 各模型"
+      },
+      {
+        "task_id": 4,
+        "title": "429 限流报错的退避重试策略",
+        "core_query": "智谱 API 429 限流 退避 重试 策略 实现"
+      },
+      {
+        "task_id": 5,
+        "title": "128K 长上下文与 Context Cache 的加价规则",
+        "core_query": "GLM-4 长上下文 128K 加价 Context Cache 价格"
+      },
+      {
+        "task_id": 6,
+        "title": "GLM-4-Flash 与 Qwen-Turbo 的价格对比",
+        "core_query": "GLM-4-Flash Qwen-Turbo 价格 对比 每百万tokens"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_002",
+    "topic": "LangGraph 与 LangChain Chain 做 Agent 的对比",
+    "category": "大模型-技术方案对比",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "编排模型与执行语义差异",
+      "状态管理与持久化能力",
+      "循环与动态路由支持",
+      "调试与可观测性手段",
+      "学习成本与选型建议"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "LCEL 链式编排的组成与执行方式",
+        "core_query": "LangChain LCEL 链式编排 Runnable 执行 原理"
+      },
+      {
+        "task_id": 2,
+        "title": "LangGraph 节点、边与执行引擎机制",
+        "core_query": "LangGraph 节点 边 执行引擎 StateGraph 原理"
+      },
+      {
+        "task_id": 3,
+        "title": "checkpointer 持久化与断点续跑",
+        "core_query": "LangGraph checkpointer 持久化 断点续跑 实现"
+      },
+      {
+        "task_id": 4,
+        "title": "条件边与循环控制图的构建方式",
+        "core_query": "LangGraph 条件边 循环 add_conditional_edges 用法"
+      },
+      {
+        "task_id": 5,
+        "title": "Command 对象实现的动态路由与 handoff",
+        "core_query": "LangGraph Command goto handoff 动态路由"
+      },
+      {
+        "task_id": 6,
+        "title": "LangSmith 追踪与图结构可视化调试",
+        "core_query": "LangGraph LangSmith 追踪 可视化 调试 对比"
+      },
+      {
+        "task_id": 7,
+        "title": "两套框架的学习曲线与迁移改造成本",
+        "core_query": "LangGraph 迁移 重构 成本 学习曲线 对比"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_003",
+    "topic": "2025年国内 RAG 创业公司发展现状",
+    "category": "大模型-行业研究",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "主要玩家与资本背景",
+      "产品形态与商业模式",
+      "落地行业与客户画像",
+      "技术路线与数据壁垒",
+      "商业化困境与增长瓶颈"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "国内 RAG 赛道主要公司名单与融资轮次",
+        "core_query": "2025 国内 RAG 公司 融资 轮次 盘点"
+      },
+      {
+        "task_id": 2,
+        "title": "头部厂商的估值水平与投资方背景",
+        "core_query": "RAG 创业公司 估值 投资方 2025"
+      },
+      {
+        "task_id": 3,
+        "title": "平台化产品、SDK 与一体机的形态差异",
+        "core_query": "RAG 产品形态 平台 SDK 一体机 差异"
+      },
+      {
+        "task_id": 4,
+        "title": "订阅制、按量计费与私有化的价格结构",
+        "core_query": "RAG 平台 收费模式 订阅 按量 私有化 价格"
+      },
+      {
+        "task_id": 5,
+        "title": "金融、政务、医疗行业的典型客户案例",
+        "core_query": "RAG 落地 金融 政务 医疗 客户案例"
+      },
+      {
+        "task_id": 6,
+        "title": "检索自研程度与数据飞轮构成的壁垒",
+        "core_query": "RAG 技术路线 自研检索 数据壁垒 差异化"
+      },
+      {
+        "task_id": 7,
+        "title": "项目制交付下的毛利与规模化难题",
+        "core_query": "RAG 创业 商业化 盈利 毛利 规模化 困境"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_004",
+    "topic": "中小团队落地大模型应用的成本优化方案",
+    "category": "大模型-综合深度研究",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "模型选型与档位成本",
+      "推理侧优化手段",
+      "RAG 架构的成本构成",
+      "缓存与请求复用",
+      "人力投入与 ROI",
+      "常见成本浪费点"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "主流模型 API 档位价格对比",
+        "core_query": "大模型 API 价格 档位 对比 中小团队 2025"
+      },
+      {
+        "task_id": 2,
+        "title": "开源模型自部署的 TCO 构成",
+        "core_query": "开源大模型 自部署 TCO 显卡 运维 成本"
+      },
+      {
+        "task_id": 3,
+        "title": "批处理与投机解码对单位成本的改善",
+        "core_query": "大模型推理 批处理 投机解码 单位成本 下降"
+      },
+      {
+        "task_id": 4,
+        "title": "向量库与 rerank 环节的开销占比",
+        "core_query": "RAG 成本构成 向量数据库 rerank 开销 占比"
+      },
+      {
+        "task_id": 5,
+        "title": "Prompt 缓存与前缀复用的降本实测",
+        "core_query": "Prompt Cache 前缀复用 降本 实测 幅度"
+      },
+      {
+        "task_id": 6,
+        "title": "人力投入折算与 ROI 测算方法",
+        "core_query": "大模型应用 ROI 测算 人力成本 折算 方法"
+      },
+      {
+        "task_id": 7,
+        "title": "无效 token 消耗的典型场景",
+        "core_query": "大模型应用 token 浪费 场景 成本 优化"
+      },
+      {
+        "task_id": 8,
+        "title": "成本监控与预算告警的工程方案",
+        "core_query": "大模型 API 成本 监控 预算 告警 方案"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_005",
+    "topic": "高光谱图像解混的常用评价指标",
+    "category": "高光谱-技术事实",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "丰度估计误差类指标",
+      "端元提取精度类指标",
+      "重构误差与拟合优度",
+      "指标计算复杂度",
+      "噪声与异常值敏感性"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "SAD 与 aSAD 的计算公式与量纲",
+        "core_query": "高光谱解混 SAD aSAD 计算 公式 光谱角"
+      },
+      {
+        "task_id": 2,
+        "title": "丰度 RMSE 的计算与聚合方式",
+        "core_query": "高光谱解混 丰度 RMSE 误差 计算 方式"
+      },
+      {
+        "task_id": 3,
+        "title": "端元提取的光谱角误差与源误差评价",
+        "core_query": "高光谱 端元提取 光谱角 源误差 评价"
+      },
+      {
+        "task_id": 4,
+        "title": "重构误差 RE 与拟合优度指标",
+        "core_query": "高光谱解混 重构误差 RE 拟合优度 指标"
+      },
+      {
+        "task_id": 5,
+        "title": "各指标的计算耗时与内存开销",
+        "core_query": "高光谱解混 评价指标 计算复杂度 耗时 内存"
+      },
+      {
+        "task_id": 6,
+        "title": "噪声水平对指标数值的影响",
+        "core_query": "高光谱解混 评价指标 噪声 影响 鲁棒性"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_006",
+    "topic": "高光谱图像分类的主流深度学习方法综述",
+    "category": "高光谱-学术综述",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "CNN 谱空联合建模方法",
+      "Transformer 与注意力方法",
+      "小样本与自监督方案",
+      "数据集与精度对比",
+      "落地瓶颈"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "3D CNN 与空谱联合卷积的代表模型",
+        "core_query": "高光谱分类 3D CNN 空谱联合 代表模型"
+      },
+      {
+        "task_id": 2,
+        "title": "光谱-空间注意力机制的设计",
+        "core_query": "高光谱分类 光谱注意力 空间注意力 机制"
+      },
+      {
+        "task_id": 3,
+        "title": "Transformer 与 CNN 混合架构",
+        "core_query": "高光谱分类 Transformer CNN 混合 架构 进展"
+      },
+      {
+        "task_id": 4,
+        "title": "小样本分类方法",
+        "core_query": "高光谱分类 小样本 少样本 方法"
+      },
+      {
+        "task_id": 5,
+        "title": "自监督预训练在分类中的迁移效果",
+        "core_query": "高光谱分类 自监督 预训练 迁移 效果"
+      },
+      {
+        "task_id": 6,
+        "title": "Indian Pines、Pavia 上的 SOTA 精度",
+        "core_query": "高光谱分类 Indian Pines Pavia 精度 SOTA 对比"
+      },
+      {
+        "task_id": 7,
+        "title": "跨场景泛化与标注成本构成的落地障碍",
+        "core_query": "高光谱分类 跨场景 泛化 标注成本 落地 难点"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_007",
+    "topic": "高光谱解混领域2024-2025年最新研究进展",
+    "category": "高光谱-学术前沿",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "监督解混最新方法与 SOTA",
+      "无监督解混改进",
+      "半监督与自监督方案",
+      "基础模型与生成模型结合",
+      "数据集与评测协议更新",
+      "核心瓶颈与趋势判断"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "深度监督解混的网络设计与 SOTA 结果",
+        "core_query": "高光谱解混 深度监督 网络 SOTA 2024 2025"
+      },
+      {
+        "task_id": 2,
+        "title": "无监督自编码器解混的最新改进",
+        "core_query": "高光谱解混 无监督 自编码器 改进 2024"
+      },
+      {
+        "task_id": 3,
+        "title": "半监督解混的标注利用策略",
+        "core_query": "高光谱解混 半监督 标注 样本 利用"
+      },
+      {
+        "task_id": 4,
+        "title": "自监督解混的预训练任务设计",
+        "core_query": "高光谱解混 自监督 预训练 任务 设计"
+      },
+      {
+        "task_id": 5,
+        "title": "扩散模型用于解混的探索",
+        "core_query": "扩散模型 高光谱解混 生成 方法 研究"
+      },
+      {
+        "task_id": 6,
+        "title": "视觉基础模型在解混任务上的适配",
+        "core_query": "视觉基础模型 高光谱解混 微调 适配"
+      },
+      {
+        "task_id": 7,
+        "title": "新发布数据集与评测协议的变化",
+        "core_query": "高光谱解混 新数据集 评测协议 2024 2025"
+      },
+      {
+        "task_id": 8,
+        "title": "物理一致性约束与可解释性瓶颈",
+        "core_query": "高光谱解混 物理约束 可解释性 瓶颈"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_008",
+    "topic": "深度学习中常用梯度下降优化算法对比",
+    "category": "数学-优化理论",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "更新规则与动量机制",
+      "收敛性理论保证",
+      "对损失曲面的适应性",
+      "超参与显存开销",
+      "实际训练选型"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "SGD 与 Momentum 的参数更新公式",
+        "core_query": "SGD Momentum 参数更新 公式 动量 原理"
+      },
+      {
+        "task_id": 2,
+        "title": "Adam 与 AdamW 的权重衰减解耦差异",
+        "core_query": "Adam AdamW 权重衰减 解耦 区别"
+      },
+      {
+        "task_id": 3,
+        "title": "各优化器的收敛率证明与成立假设",
+        "core_query": "优化算法 收敛率 证明 凸性 假设 条件"
+      },
+      {
+        "task_id": 4,
+        "title": "鞍点逃逸与平坦极小值的偏好差异",
+        "core_query": "优化器 鞍点 平坦极小值 泛化 偏好"
+      },
+      {
+        "task_id": 5,
+        "title": "优化器状态的显存占用对比",
+        "core_query": "优化器 显存占用 Adam 状态 对比"
+      },
+      {
+        "task_id": 6,
+        "title": "学习率等超参的敏感度与调参经验",
+        "core_query": "优化器 学习率 超参 敏感度 调参 经验"
+      },
+      {
+        "task_id": 7,
+        "title": "大模型预训练中的优化器选型实践",
+        "core_query": "大模型 预训练 优化器 选型 AdamW 实践"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_009",
+    "topic": "羽毛球拍磅数选择的影响与推荐",
+    "category": "羽毛球-器材知识",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "线床弹性与出球速度",
+      "控球精度与容错率",
+      "发力门槛与手臂负荷",
+      "不同水平段区间",
+      "拉线工艺与磅数衰减"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "高低磅对出球速度与线床弹性的影响",
+        "core_query": "羽毛球 高低磅 出球速度 线床弹性 差异"
+      },
+      {
+        "task_id": 2,
+        "title": "磅数对甜区容错率与控球精度的影响",
+        "core_query": "羽毛球 磅数 控球精度 容错 甜区 影响"
+      },
+      {
+        "task_id": 3,
+        "title": "高磅对发力要求与手臂负荷的影响",
+        "core_query": "羽毛球 高磅 发力 要求 手臂 负荷 伤病"
+      },
+      {
+        "task_id": 4,
+        "title": "新手、进阶与专业选手的磅数建议区间",
+        "core_query": "羽毛球拍 磅数推荐 新手 进阶 专业 区间"
+      },
+      {
+        "task_id": 5,
+        "title": "穿线方式与两结四结对实际磅数的影响",
+        "core_query": "羽毛球 穿线方式 两结 四结 磅数 影响"
+      },
+      {
+        "task_id": 6,
+        "title": "掉磅规律与换线周期",
+        "core_query": "羽毛球线 掉磅 规律 换线 周期"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_010",
+    "topic": "业余羽毛球爱好者提升反手高远球的训练方法",
+    "category": "羽毛球-技术训练",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "发力链条与击球点",
+      "业余常见错误",
+      "无球力量训练",
+      "有球分步练习",
+      "周期化提升路径"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "反手高远球的引拍与发力顺序",
+        "core_query": "羽毛球 反手高远球 引拍 发力 顺序"
+      },
+      {
+        "task_id": 2,
+        "title": "击球点高度与拍面控制要领",
+        "core_query": "反手高远球 击球点 拍面 控制 要领"
+      },
+      {
+        "task_id": 3,
+        "title": "业余选手的典型错误与成因",
+        "core_query": "业余羽毛球 反手高远球 常见错误 原因"
+      },
+      {
+        "task_id": 4,
+        "title": "前臂旋外与肩部柔韧的专项训练",
+        "core_query": "羽毛球 前臂旋外 肩 柔韧 专项 训练"
+      },
+      {
+        "task_id": 5,
+        "title": "腕力与握力训练方法",
+        "core_query": "羽毛球 腕力 握力 训练 方法 器械"
+      },
+      {
+        "task_id": 6,
+        "title": "多球与定点分步练习的组织方式",
+        "core_query": "反手高远球 多球 定点 分步 练习"
+      },
+      {
+        "task_id": 7,
+        "title": "从入门到稳定的周训练计划编排",
+        "core_query": "业余羽毛球 反手高远球 周计划 进阶 训练"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_011",
+    "topic": "大模型 Function Calling 与 MCP 协议的关系与差异",
+    "category": "大模型-技术方案对比",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "协议定位与解决范围",
+      "工具描述与发现机制",
+      "调用链路与消息结构",
+      "上下文开销与工具筛选",
+      "安全边界与权限控制"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "Function Calling 的模型侧机制与实现原理",
+        "core_query": "Function Calling 原理 模型侧 工具调用 实现"
+      },
+      {
+        "task_id": 2,
+        "title": "MCP 的 Client/Server/Transport 架构",
+        "core_query": "MCP 协议 架构 Client Server Transport stdio"
+      },
+      {
+        "task_id": 3,
+        "title": "工具 JSON Schema 描述与动态发现流程",
+        "core_query": "MCP tools list 工具 schema 动态发现 JSON Schema"
+      },
+      {
+        "task_id": 4,
+        "title": "tool_call 消息结构与多轮结果回填",
+        "core_query": "tool_call tool_result 消息 结构 多轮 回填"
+      },
+      {
+        "task_id": 5,
+        "title": "多工具场景下的上下文占用与工具裁剪",
+        "core_query": "MCP 工具数量 上下文 占用 token 裁剪"
+      },
+      {
+        "task_id": 6,
+        "title": "MCP 权限模型与工具调用安全风险",
+        "core_query": "MCP 安全 权限 模型 工具调用 沙箱 风险"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_012",
+    "topic": "2025年大模型推理成本下降的技术路径",
+    "category": "大模型-行业研究",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "算力供给与单位成本趋势",
+      "推理引擎吞吐优化",
+      "量化与压缩带来的降本",
+      "缓存与请求复用",
+      "厂商定价策略变化",
+      "对应用层的影响"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "单 token 推理成本的历史变化趋势",
+        "core_query": "大模型 单token 推理成本 下降 趋势 数据"
+      },
+      {
+        "task_id": 2,
+        "title": "算力供给与芯片价格对推理成本的影响",
+        "core_query": "算力 供给 芯片 价格 推理 成本 影响"
+      },
+      {
+        "task_id": 3,
+        "title": "连续批处理的吞吐提升机制",
+        "core_query": "vLLM 连续批处理 continuous batching 吞吐"
+      },
+      {
+        "task_id": 4,
+        "title": "PD 分离架构的部署收益",
+        "core_query": "PD分离 Prefill Decode 分离 部署 收益"
+      },
+      {
+        "task_id": 5,
+        "title": "FP8/INT4 量化对精度与成本的影响",
+        "core_query": "大模型 量化 FP8 INT4 精度 成本 权衡"
+      },
+      {
+        "task_id": 6,
+        "title": "前缀缓存与 KV 复用的实现方式",
+        "core_query": "Prefix Cache KV Cache 复用 实现 机制"
+      },
+      {
+        "task_id": 7,
+        "title": "厂商降价节奏与定价结构变化",
+        "core_query": "大模型 API 降价 定价 结构 2025 厂商"
+      },
+      {
+        "task_id": 8,
+        "title": "成本下降催生的应用形态变化",
+        "core_query": "推理成本下降 AI应用 产品形态 变化"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_013",
+    "topic": "高光谱成像仪的主要类型与关键性能参数",
+    "category": "高光谱-技术事实",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "成像体制与工作原理",
+      "光谱与空间性能指标",
+      "辐射性能与定标",
+      "数据率与存储压力",
+      "平台适配与选型"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "推扫式、画幅式与滤光片式的成像原理",
+        "core_query": "高光谱成像仪 推扫式 画幅式 滤光片 原理"
+      },
+      {
+        "task_id": 2,
+        "title": "光谱分辨率与波段数、波段范围的对应",
+        "core_query": "高光谱 光谱分辨率 波段数 波段范围"
+      },
+      {
+        "task_id": 3,
+        "title": "空间分辨率与成像幅宽的权衡",
+        "core_query": "高光谱 空间分辨率 幅宽 权衡"
+      },
+      {
+        "task_id": 4,
+        "title": "信噪比指标与辐射定标流程",
+        "core_query": "高光谱 信噪比 SNR 辐射定标 流程"
+      },
+      {
+        "task_id": 5,
+        "title": "高光谱数据率、存储与传输压力",
+        "core_query": "高光谱 数据率 存储 传输 带宽 压力"
+      },
+      {
+        "task_id": 6,
+        "title": "星载、机载与地面平台的适配差异",
+        "core_query": "高光谱 星载 机载 地面 平台 选型 差异"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_014",
+    "topic": "高光谱图像去噪与预处理方法",
+    "category": "高光谱-技术方法",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "噪声来源与建模",
+      "空间域去噪方法",
+      "光谱与低秩联合方法",
+      "深度学习去噪",
+      "辐射与大气校正"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "条带噪声的成因与去除思路",
+        "core_query": "高光谱 条带噪声 成因 去除 方法"
+      },
+      {
+        "task_id": 2,
+        "title": "散粒噪声与读出噪声的建模",
+        "core_query": "高光谱 散粒噪声 读出噪声 建模 泊松"
+      },
+      {
+        "task_id": 3,
+        "title": "空间域滤波与边缘保持去噪",
+        "core_query": "高光谱 空间域 滤波 边缘保持 去噪"
+      },
+      {
+        "task_id": 4,
+        "title": "低秩约束与张量分解去噪",
+        "core_query": "高光谱 低秩 张量分解 去噪 方法"
+      },
+      {
+        "task_id": 5,
+        "title": "深度学习去噪网络的结构设计",
+        "core_query": "高光谱 深度学习 去噪 网络 结构"
+      },
+      {
+        "task_id": 6,
+        "title": "辐射定标与反射率转换",
+        "core_query": "高光谱 辐射定标 反射率 转换 流程"
+      },
+      {
+        "task_id": 7,
+        "title": "FLAASH 与 6S 大气校正的参数设置",
+        "core_query": "高光谱 大气校正 FLAASH 6S 参数 设置"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_015",
+    "topic": "高光谱目标检测与小目标识别方法",
+    "category": "高光谱-应用方向",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "任务设定与亚像元难点",
+      "光谱匹配类方法",
+      "稀疏表示方法",
+      "深度学习检测框架",
+      "数据集与评价指标"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "亚像元混合导致的目标检测难点",
+        "core_query": "高光谱 目标检测 亚像元 混合 难点"
+      },
+      {
+        "task_id": 2,
+        "title": "CEM 与 ACE 光谱匹配检测算法",
+        "core_query": "高光谱 目标检测 CEM ACE 算法"
+      },
+      {
+        "task_id": 3,
+        "title": "稀疏表示与字典学习的检测建模",
+        "core_query": "高光谱 目标检测 稀疏表示 字典学习"
+      },
+      {
+        "task_id": 4,
+        "title": "CNN 与 Transformer 检测框架",
+        "core_query": "高光谱 目标检测 CNN Transformer 框架"
+      },
+      {
+        "task_id": 5,
+        "title": "公开数据集与场景覆盖",
+        "core_query": "高光谱 目标检测 公开数据集 场景"
+      },
+      {
+        "task_id": 6,
+        "title": "ROC 曲线与 AUC 评价方式",
+        "core_query": "高光谱 目标检测 ROC AUC 评价 指标"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_016",
+    "topic": "矩阵分解在机器学习中的主要方法与应用",
+    "category": "数学-线性代数",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "SVD 与低秩近似",
+      "特征分解与谱性质",
+      "非负矩阵分解",
+      "稀疏与鲁棒分解",
+      "张量分解"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "SVD 的几何意义与奇异值解释",
+        "core_query": "SVD 几何意义 奇异值 解释"
+      },
+      {
+        "task_id": 2,
+        "title": "截断 SVD 与最优低秩近似",
+        "core_query": "截断SVD 低秩近似 Eckart-Young 定理"
+      },
+      {
+        "task_id": 3,
+        "title": "特征分解与谱聚类、谱分析的联系",
+        "core_query": "特征值分解 谱聚类 拉普拉斯 谱分析"
+      },
+      {
+        "task_id": 4,
+        "title": "NMF 的目标函数与稀疏性约束",
+        "core_query": "非负矩阵分解 NMF 目标函数 稀疏 约束"
+      },
+      {
+        "task_id": 5,
+        "title": "NMF 的乘法更新与交替求解算法",
+        "core_query": "NMF 乘法更新 交替最小二乘 求解 算法"
+      },
+      {
+        "task_id": 6,
+        "title": "RPCA 的低秩加稀疏分解",
+        "core_query": "鲁棒PCA RPCA 低秩 稀疏 分解"
+      },
+      {
+        "task_id": 7,
+        "title": "CP 与 Tucker 张量分解形式",
+        "core_query": "张量分解 CP Tucker 形式 区别"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_017",
+    "topic": "概率图模型的核心类型与推断方法",
+    "category": "数学-概率论",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "条件独立与图结构",
+      "有向与无向建模",
+      "精确推断算法",
+      "近似推断算法",
+      "参数学习与 EM"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "d-分离与条件独立性的判定规则",
+        "core_query": "概率图模型 条件独立 d-分离 判定"
+      },
+      {
+        "task_id": 2,
+        "title": "贝叶斯网络的因子分解形式",
+        "core_query": "贝叶斯网络 因子分解 有向图 建模"
+      },
+      {
+        "task_id": 3,
+        "title": "马尔可夫随机场与势函数设计",
+        "core_query": "马尔可夫随机场 势函数 无向图 建模"
+      },
+      {
+        "task_id": 4,
+        "title": "变量消元算法的复杂度",
+        "core_query": "变量消元 算法 复杂度 精确推断"
+      },
+      {
+        "task_id": 5,
+        "title": "信念传播与树结构上的精确推断",
+        "core_query": "信念传播 belief propagation 树 精确推断"
+      },
+      {
+        "task_id": 6,
+        "title": "MCMC 采样在推断中的实现",
+        "core_query": "概率图模型 推断 MCMC 采样 实现"
+      },
+      {
+        "task_id": 7,
+        "title": "变分推断与平均场近似",
+        "core_query": "变分推断 平均场 近似 原理"
+      },
+      {
+        "task_id": 8,
+        "title": "EM 算法与隐变量参数估计",
+        "core_query": "EM算法 隐变量 参数估计 收敛"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_018",
+    "topic": "凸优化中的对偶理论与 KKT 条件",
+    "category": "数学-优化理论",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "对偶问题的构造",
+      "强对偶成立条件",
+      "KKT 条件的含义",
+      "互补松弛与解的稀疏性",
+      "在 SVM 与正则化中的落地"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "拉格朗日函数的构造与乘子含义",
+        "core_query": "凸优化 拉格朗日函数 乘子 构造"
+      },
+      {
+        "task_id": 2,
+        "title": "对偶函数的下界性质与对偶问题",
+        "core_query": "对偶函数 下界 性质 对偶问题 构造"
+      },
+      {
+        "task_id": 3,
+        "title": "Slater 条件与强对偶成立前提",
+        "core_query": "Slater条件 强对偶 成立 前提"
+      },
+      {
+        "task_id": 4,
+        "title": "KKT 四个条件的完整形式",
+        "core_query": "KKT条件 四个 条件 完整 形式"
+      },
+      {
+        "task_id": 5,
+        "title": "互补松弛条件与稀疏解的来源",
+        "core_query": "互补松弛条件 稀疏解 支持向量"
+      },
+      {
+        "task_id": 6,
+        "title": "SVM 对偶问题推导与核技巧",
+        "core_query": "SVM 对偶 推导 核技巧"
+      },
+      {
+        "task_id": 7,
+        "title": "Lasso 的对偶形式与近端求解",
+        "core_query": "Lasso 对偶 近端梯度 坐标下降"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_019",
+    "topic": "信息论核心概念及其在机器学习中的应用",
+    "category": "数学-信息论",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "熵与条件熵",
+      "KL 与 JS 散度",
+      "互信息",
+      "交叉熵与最大似然",
+      "信息瓶颈"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "熵、联合熵与条件熵的定义",
+        "core_query": "信息论 熵 联合熵 条件熵 定义"
+      },
+      {
+        "task_id": 2,
+        "title": "KL 散度的非对称性与方向影响",
+        "core_query": "KL散度 非对称性 方向 影响"
+      },
+      {
+        "task_id": 3,
+        "title": "JS 散度的对称化修正",
+        "core_query": "JS散度 对称 修正 定义"
+      },
+      {
+        "task_id": 4,
+        "title": "互信息与特征选择的结合",
+        "core_query": "互信息 特征选择 方法 应用"
+      },
+      {
+        "task_id": 5,
+        "title": "交叉熵损失与最大似然的等价推导",
+        "core_query": "交叉熵损失 最大似然 等价 推导"
+      },
+      {
+        "task_id": 6,
+        "title": "信息瓶颈理论与表示压缩权衡",
+        "core_query": "信息瓶颈 理论 表示 压缩 权衡"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_020",
+    "topic": "蒙特卡洛方法在数值计算与采样中的应用",
+    "category": "数学-数值计算",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "积分原理与收敛率",
+      "方差缩减技术",
+      "MCMC 采样",
+      "序贯蒙特卡洛",
+      "拟蒙特卡洛与诊断"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "蒙特卡洛积分的误差与根号 N 收敛",
+        "core_query": "蒙特卡洛积分 误差 收敛 1/√N"
+      },
+      {
+        "task_id": 2,
+        "title": "重要性采样与权重退化问题",
+        "core_query": "重要性采样 权重 退化 方差 问题"
+      },
+      {
+        "task_id": 3,
+        "title": "分层采样与对偶变量法",
+        "core_query": "分层采样 对偶变量 方差缩减"
+      },
+      {
+        "task_id": 4,
+        "title": "Metropolis-Hastings 的接受率设计",
+        "core_query": "Metropolis-Hastings 接受率 设计 提议分布"
+      },
+      {
+        "task_id": 5,
+        "title": "Gibbs 采样与坐标条件分布",
+        "core_query": "Gibbs采样 坐标 条件分布 原理"
+      },
+      {
+        "task_id": 6,
+        "title": "粒子滤波与序贯重要性重采样",
+        "core_query": "粒子滤波 序贯重要性重采样 SIR"
+      },
+      {
+        "task_id": 7,
+        "title": "低差异序列与 Gelman-Rubin 诊断",
+        "core_query": "低差异序列 Gelman-Rubin 收敛诊断"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_021",
+    "topic": "羽毛球单打与双打战术体系差异",
+    "category": "羽毛球-战术理论",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "站位与场地覆盖",
+      "轮转与分工",
+      "发接发战术",
+      "攻防转换",
+      "节奏与体能分配"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "单打的回中原则与场地覆盖范围",
+        "core_query": "羽毛球 单打 回中 站位 场地 覆盖"
+      },
+      {
+        "task_id": 2,
+        "title": "双打前后站位与左右站位的选择",
+        "core_query": "羽毛球 双打 前后站位 左右站位 选择"
+      },
+      {
+        "task_id": 3,
+        "title": "双打轮转时机与补位分工",
+        "core_query": "羽毛球 双打 轮转 时机 补位 分工"
+      },
+      {
+        "task_id": 4,
+        "title": "双打发接发抢攻与前三拍套路",
+        "core_query": "羽毛球 双打 发接发 抢攻 前三拍 套路"
+      },
+      {
+        "task_id": 5,
+        "title": "单打拉吊与双打平抽挡的攻防转换",
+        "core_query": "羽毛球 单打 拉吊 双打 平抽挡 攻防转换"
+      },
+      {
+        "task_id": 6,
+        "title": "单打体能分配与双打连贯速度要求",
+        "core_query": "羽毛球 单打 体能分配 双打 连贯 速度"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_022",
+    "topic": "羽毛球运动常见损伤与预防康复",
+    "category": "羽毛球-运动医学",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "损伤部位与类型",
+      "技术动作诱因",
+      "预防性训练",
+      "急性期处理",
+      "康复与重返球场"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "肩、膝、踝、腰的损伤类型分布",
+        "core_query": "羽毛球 运动损伤 肩 膝 踝 腰 类型 统计"
+      },
+      {
+        "task_id": 2,
+        "title": "杀球动作的肩肘力学诱因",
+        "core_query": "羽毛球 杀球 肩 肘 损伤 力学 诱因"
+      },
+      {
+        "task_id": 3,
+        "title": "蹬跨步与急停的膝踝损伤诱因",
+        "core_query": "羽毛球 蹬跨步 急停 膝 踝 损伤 诱因"
+      },
+      {
+        "task_id": 4,
+        "title": "肩袖与核心稳定性的预防训练",
+        "core_query": "羽毛球 肩袖 核心 稳定性 预防 训练"
+      },
+      {
+        "task_id": 5,
+        "title": "急性期 PRICE 处理与就医判断",
+        "core_query": "运动损伤 急性期 PRICE 处理 就医 判断"
+      },
+      {
+        "task_id": 6,
+        "title": "康复分期负荷递增与重返球场测试",
+        "core_query": "运动损伤 康复 分期 重返球场 功能测试"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_023",
+    "topic": "羽毛球步伐训练体系与方法",
+    "category": "羽毛球-技术训练",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "基础步法分类",
+      "六点移动路线",
+      "启动与回动",
+      "无球与有球专项",
+      "常见错误"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "并步、交叉步与垫步的动作要点",
+        "core_query": "羽毛球 并步 交叉步 垫步 动作要点"
+      },
+      {
+        "task_id": 2,
+        "title": "前场蹬跨步与后场起跳步",
+        "core_query": "羽毛球 蹬跨步 起跳步 动作 要点"
+      },
+      {
+        "task_id": 3,
+        "title": "米字六点移动的路线与重心控制",
+        "core_query": "羽毛球 六点 米字 移动 路线 重心"
+      },
+      {
+        "task_id": 4,
+        "title": "分腿垫步启动与回动节奏",
+        "core_query": "羽毛球 分腿垫步 启动 回动 节奏"
+      },
+      {
+        "task_id": 5,
+        "title": "无球步法专项与多球结合训练",
+        "core_query": "羽毛球 无球 步法 专项 多球 训练"
+      },
+      {
+        "task_id": 6,
+        "title": "重心过高与回动慢的纠正方法",
+        "core_query": "羽毛球 步法 重心高 回动慢 纠正"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_024",
+    "topic": "羽毛球拍本体参数与打法适配",
+    "category": "羽毛球-器材知识",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "重量与平衡点",
+      "中杆硬度与形变",
+      "拍面大小与甜区",
+      "打法适配与选购验证"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "3U/4U 重量分级的手感差异",
+        "core_query": "羽毛球拍 3U 4U 重量 分级 手感"
+      },
+      {
+        "task_id": 2,
+        "title": "头重头轻对挥速与杀球的影响",
+        "core_query": "羽毛球拍 头重 头轻 平衡点 挥速 杀球"
+      },
+      {
+        "task_id": 3,
+        "title": "中杆硬度对力量传导的影响",
+        "core_query": "羽毛球拍 中杆硬度 力量传导 影响"
+      },
+      {
+        "task_id": 4,
+        "title": "拍面大小与甜区容错率的关系",
+        "core_query": "羽毛球拍 拍面大小 甜区 容错率"
+      },
+      {
+        "task_id": 5,
+        "title": "进攻型与控球型打法的参数组合及试打验证",
+        "core_query": "羽毛球拍 进攻型 控球型 参数 试打"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_025",
+    "topic": "Transformer 架构的核心组件与演进",
+    "category": "深度学习-模型架构",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "自注意力与计算复杂度",
+      "多头注意力与位置编码",
+      "归一化与残差放置",
+      "前馈层与激活函数",
+      "长上下文与注意力改进"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "自注意力的计算过程与实现",
+        "core_query": "自注意力 计算过程 QKV 实现 原理"
+      },
+      {
+        "task_id": 2,
+        "title": "注意力 O(n²) 复杂度的来源与影响",
+        "core_query": "自注意力 复杂度 O(n²) 来源 长序列"
+      },
+      {
+        "task_id": 3,
+        "title": "多头注意力的分头机制",
+        "core_query": "多头注意力 分头 机制 作用"
+      },
+      {
+        "task_id": 4,
+        "title": "RoPE 与 ALiBi 位置编码方案",
+        "core_query": "位置编码 RoPE ALiBi 绝对 相对"
+      },
+      {
+        "task_id": 5,
+        "title": "Pre-LN 与 Post-LN 对训练稳定性的影响",
+        "core_query": "Pre-LN Post-LN 归一化 位置 稳定性"
+      },
+      {
+        "task_id": 6,
+        "title": "SwiGLU 与前馈层结构演进",
+        "core_query": "Transformer FFN SwiGLU GLU 结构"
+      },
+      {
+        "task_id": 7,
+        "title": "稀疏/线性注意力与长上下文外推",
+        "core_query": "稀疏注意力 线性注意力 长上下文 外推"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_026",
+    "topic": "深度学习模型量化与压缩技术",
+    "category": "深度学习-模型部署",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "量化原理与粒度",
+      "PTQ 与 QAT 流程",
+      "数值格式与硬件支持",
+      "剪枝与结构化稀疏",
+      "蒸馏与精度恢复"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "量化映射原理与零点、缩放因子",
+        "core_query": "模型量化 映射 原理 零点 缩放因子"
+      },
+      {
+        "task_id": 2,
+        "title": "per-tensor 与 per-channel 的精度差异",
+        "core_query": "per-tensor per-channel 量化 精度 差异"
+      },
+      {
+        "task_id": 3,
+        "title": "PTQ 的校准集选择与流程",
+        "core_query": "训练后量化 PTQ 校准 数据集 流程"
+      },
+      {
+        "task_id": 4,
+        "title": "QAT 的伪量化节点与训练流程",
+        "core_query": "量化感知训练 QAT 伪量化 节点 流程"
+      },
+      {
+        "task_id": 5,
+        "title": "INT4/FP8 的硬件支持与算子覆盖",
+        "core_query": "INT4 FP8 量化 硬件 支持 算子"
+      },
+      {
+        "task_id": 6,
+        "title": "结构化剪枝与稀疏加速收益",
+        "core_query": "结构化剪枝 稀疏 加速 收益"
+      },
+      {
+        "task_id": 7,
+        "title": "知识蒸馏与量化误差补偿",
+        "core_query": "知识蒸馏 量化 误差 补偿"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_027",
+    "topic": "小样本学习的主要范式与进展",
+    "category": "深度学习-学习方法",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "问题设定与任务形式",
+      "评测协议与实验陷阱",
+      "度量式方法",
+      "优化式元学习",
+      "自监督与数据增强",
+      "预训练范式变化"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "N-way K-shot 与支撑集查询集设定",
+        "core_query": "小样本学习 N-way K-shot 支撑集 查询集"
+      },
+      {
+        "task_id": 2,
+        "title": "episodic 训练与评测协议",
+        "core_query": "小样本 episodic 训练 评测 协议"
+      },
+      {
+        "task_id": 3,
+        "title": "小样本实验中的数据泄漏陷阱",
+        "core_query": "小样本 实验 数据泄漏 陷阱 复现"
+      },
+      {
+        "task_id": 4,
+        "title": "原型网络与关系网络的度量建模",
+        "core_query": "原型网络 关系网络 度量学习 原理"
+      },
+      {
+        "task_id": 5,
+        "title": "MAML 与 Reptile 的元学习优化",
+        "core_query": "MAML Reptile 元学习 二阶 优化"
+      },
+      {
+        "task_id": 6,
+        "title": "自监督预训练在小样本上的迁移效果",
+        "core_query": "自监督 预训练 小样本 迁移 效果"
+      },
+      {
+        "task_id": 7,
+        "title": "数据增强与合成样本的增益",
+        "core_query": "小样本 数据增强 合成样本 增益"
+      },
+      {
+        "task_id": 8,
+        "title": "上下文学习替代微调的条件",
+        "core_query": "大模型 上下文学习 替代 微调 小样本"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_028",
+    "topic": "扩散模型与 GAN 的生成质量对比",
+    "category": "深度学习-生成模型",
+    "difficulty": "medium",
+    "expected_dimensions": [
+      "生成建模范式差异",
+      "采样效率与生成速度",
+      "质量与多样性指标",
+      "训练稳定性",
+      "条件控制能力"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "显式似然建模与隐式对抗建模的区别",
+        "core_query": "扩散模型 显式似然 GAN 隐式 对抗 区别"
+      },
+      {
+        "task_id": 2,
+        "title": "扩散采样步数与 DDIM 加速",
+        "core_query": "扩散模型 采样步数 DDIM 加速"
+      },
+      {
+        "task_id": 3,
+        "title": "扩散模型蒸馏加速方案",
+        "core_query": "扩散模型 蒸馏 加速 少步 采样"
+      },
+      {
+        "task_id": 4,
+        "title": "FID 与 IS 的计算方式与局限",
+        "core_query": "生成模型 FID IS 计算 局限"
+      },
+      {
+        "task_id": 5,
+        "title": "GAN 模式坍塌与训练崩溃成因",
+        "core_query": "GAN 模式坍塌 训练 崩溃 成因"
+      },
+      {
+        "task_id": 6,
+        "title": "ControlNet 的结构条件控制",
+        "core_query": "ControlNet 结构 条件 控制 原理"
+      },
+      {
+        "task_id": 7,
+        "title": "分类器引导与无分类器引导的差异",
+        "core_query": "分类器引导 classifier-free guidance 差异"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_029",
+    "topic": "深度学习训练中的过拟合诊断与正则化",
+    "category": "深度学习-训练调优",
+    "difficulty": "easy",
+    "expected_dimensions": [
+      "诊断信号",
+      "参数范数正则",
+      "随机性正则",
+      "数据侧手段",
+      "归一化与正则的交互"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "训练与验证损失曲线的过拟合信号",
+        "core_query": "过拟合 训练 验证 损失 曲线 信号"
+      },
+      {
+        "task_id": 2,
+        "title": "L1/L2 正则与权重衰减的机制",
+        "core_query": "L1 L2 正则 权重衰减 机制 区别"
+      },
+      {
+        "task_id": 3,
+        "title": "Dropout 与 Stochastic Depth",
+        "core_query": "Dropout Stochastic Depth 原理 作用"
+      },
+      {
+        "task_id": 4,
+        "title": "标签平滑与置信度校准",
+        "core_query": "标签平滑 label smoothing 置信度 校准"
+      },
+      {
+        "task_id": 5,
+        "title": "数据增强与早停策略设计",
+        "core_query": "数据增强 早停 early stopping 策略"
+      },
+      {
+        "task_id": 6,
+        "title": "批归一化与 Dropout 的冲突现象",
+        "core_query": "批归一化 Dropout 冲突 方差 偏移"
+      }
+    ]
+  },
+  {
+    "sample_id": "plan_030",
+    "topic": "多模态大模型的视觉语言对齐方法",
+    "category": "深度学习-前沿方向",
+    "difficulty": "hard",
+    "expected_dimensions": [
+      "连接架构设计",
+      "训练阶段划分",
+      "图文数据构造",
+      "分辨率与视觉 token",
+      "评测基准",
+      "幻觉与瓶颈"
+    ],
+    "gold_tasks": [
+      {
+        "task_id": 1,
+        "title": "线性投影层连接视觉与语言模型",
+        "core_query": "多模态大模型 线性投影 连接 视觉 语言"
+      },
+      {
+        "task_id": 2,
+        "title": "交叉注意力与 Q-Former 连接架构",
+        "core_query": "Q-Former 交叉注意力 多模态 连接"
+      },
+      {
+        "task_id": 3,
+        "title": "对齐预训练阶段的数据与目标",
+        "core_query": "多模态 对齐 预训练 阶段 目标"
+      },
+      {
+        "task_id": 4,
+        "title": "指令微调阶段的样本配比与任务类型",
+        "core_query": "多模态 指令微调 样本 配比 任务 类型"
+      },
+      {
+        "task_id": 5,
+        "title": "图文数据的清洗与质量过滤",
+        "core_query": "多模态 图文数据 清洗 质量 过滤"
+      },
+      {
+        "task_id": 6,
+        "title": "动态分辨率与视觉 token 压缩",
+        "core_query": "多模态 动态分辨率 视觉token 压缩"
+      },
+      {
+        "task_id": 7,
+        "title": "MMBench、MMMU 等评测基准",
+        "core_query": "多模态 评测基准 MMBench MMMU"
+      },
+      {
+        "task_id": 8,
+        "title": "视觉幻觉的成因与缓解",
+        "core_query": "多模态大模型 幻觉 成因 缓解"
+      }
+    ]
+  }
+]

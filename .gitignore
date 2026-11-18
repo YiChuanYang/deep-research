@@ -23,6 +23,7 @@ demo/
 notes/
 logs/
 data/
+evals/nodes/planner/score.markdown
 # ========== 前端 Node 相关 ==========
 node_modules/
 dist/

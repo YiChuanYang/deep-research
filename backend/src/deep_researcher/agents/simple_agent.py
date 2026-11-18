@@ -196,20 +196,19 @@ class SimpleAgent(Agent):
             )
 
             #保存工具调用消息
-            self.add_message(Message(
-                role='assistant',
-                content=message.content,
-                tool_calls=[
-                    {'id':call.id,
-                     'type':call.type,
-                     'function':{
-                         'name':call.function.name,
-                         'arguments':call.function.arguments
-                     }}
-                     for call in calls
-                ])
-
-            )
+            self.add_message(
+                Message(
+                    role="assistant",
+                    content=message.content,
+                    tool_calls=[
+                    # model_dump() 将 SDK 响应对象转换成字典。
+                    # 同时保留 Gemini 返回的 extra_content 等扩展字段。
+                    # exclude_none=True 表示省略值为 None 的字段。
+                    call.model_dump(exclude_none=True)
+                    for call in calls
+                    ],
+                )
+)
             
             for call in calls:
                 observation = self._execute_tool_call(call)
