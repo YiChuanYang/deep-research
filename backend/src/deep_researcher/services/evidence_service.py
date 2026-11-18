@@ -62,11 +62,6 @@ class EvidenceService:
         state_parameter="state",
         task_parameter="task_id",
     )
-    @log_operation(
-        "整理证据",
-        state_parameter="state",
-        task_parameter="task_id",
-    )
     def collect(
         self,
         state: SummaryState,

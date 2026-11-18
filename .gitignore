@@ -8,18 +8,15 @@ dist/
 .uv/
 .uv-cache/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv-task-cache/
 .coverage
 .env
 .env.local
 *.log
 workspace/
 demo/
-!/backend/demo/
-/backend/demo/*
-!/backend/demo/demo_deepresearcher.py
-!/backend/demo/demo_graphresearcher.py
-!/backend/demo/demo_logging.py
-!/backend/demo/demo_report_iteration.py
 notes/
 logs/
 data/
@@ -42,9 +39,7 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 /IMPLEMENTATION_ROADMAP.md
-# 本地运行日志及轮转文件
-logs/
-
 # 可重建的评测批次与对照输出
 /backend/evals/runs/
 /backend/evals/comparisons/
+/backend/evals/outputs/

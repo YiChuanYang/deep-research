@@ -49,7 +49,6 @@ _COMPONENTS: dict[str, tuple[str, str]] = {
     "graph.report_cycle": ("🔄", "graph.report_cycle"),
     "graph.parallel_tasks": ("🧵", "graph.parallel"),
     "services.note_service": ("📒", "services.note"),
-    "services.tool_events": ("🪝", "listeners.tools"),
     "agents.simple_agent": ("🤖", "agents.simple"),
     "agents.tool_aware_agent": ("🤖", "agents.tool_aware"),
     "llm.llm": ("🔌", "llm"),

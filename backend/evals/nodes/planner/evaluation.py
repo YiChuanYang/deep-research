@@ -1,14 +1,28 @@
-from deep_researcher.services.planner import PlanningService
-from deep_researcher.rag.embeddings import EmbeddingClient
-from deep_researcher.config import Configuration
+from functools import lru_cache
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-cfg = Configuration.from_env()
-client = EmbeddingClient(cfg)
+from deep_researcher.config import Configuration
+from deep_researcher.rag.embeddings import EmbeddingClient
 
 
-def caculate_dimension_cover_rate(expected_points:list[str],actual_titles:list[str],threshold:float=0.7)->float:
+@lru_cache(maxsize=1)
+def get_embedding_client() -> EmbeddingClient:
+    """实际计算指标时才加载模型；仅导入评分函数不会读取配置或占用 GPU。"""
+    return EmbeddingClient(Configuration.from_env())
+
+
+def close_embedding_client() -> None:
+    """释放本批评测的客户端；没有创建过时不初始化模型。"""
+    if get_embedding_client.cache_info().currsize:
+        get_embedding_client().close()
+        get_embedding_client.cache_clear()
+
+
+def caculate_dimension_cover_rate(
+    expected_points: list[str], actual_titles: list[str], threshold: float = 0.7
+) -> float:
     """
     计算预期维度覆盖率
     算法逻辑：对每一条预期要点，计算其与所有实际要点的语义余弦相似度，取最高值；
@@ -21,14 +35,15 @@ def caculate_dimension_cover_rate(expected_points:list[str],actual_titles:list[s
 
     Returns:
         float: 预期维度覆盖率，取值范围 0~1
-        """
+    """
 
     if not expected_points or not actual_titles:
         return 0.0
-    #转换成向量
-    expected_vectors = client.embed(expected_points,timeout=60.0)
-    actual_vectors = client.embed(actual_titles,timeout=60.0)
-    #换成numpy
+    # 转换成向量
+    client = get_embedding_client()
+    expected_vectors = client.embed(expected_points, timeout=60.0)
+    actual_vectors = client.embed(actual_titles, timeout=60.0)
+    # 换成numpy
     expected_matrix = np.array(expected_vectors, dtype=np.float32)
     actual_matrix = np.array(actual_vectors, dtype=np.float32)
 
@@ -85,10 +100,11 @@ def calculate_task_semantic_match(
             "match_count": 0,
             "unmatched_gold": len(gold_tasks),
             "unmatched_gen": len(gen_tasks),
-            "match_pairs": []
+            "match_pairs": [],
         }
 
     # ========== 1. 批量向量化（和你覆盖率函数完全一致） ==========
+    client = get_embedding_client()
     gold_vectors = client.embed(gold_tasks, timeout=60.0)
     gen_vectors = client.embed(gen_tasks, timeout=60.0)
 
@@ -135,7 +151,7 @@ def calculate_task_semantic_match(
         {
             "gold_task": gold_tasks[i],
             "gen_task": gen_tasks[j],
-            "similarity": round(float(sim), 4)
+            "similarity": round(float(sim), 4),
         }
         for i, j, sim in zip(row_ind, col_ind, matched_sims)
     ]
@@ -145,7 +161,7 @@ def calculate_task_semantic_match(
         "match_count": match_count,
         "unmatched_gold": unmatched_gold,
         "unmatched_gen": unmatched_gen,
-        "match_pairs": match_pairs
+        "match_pairs": match_pairs,
     }
 
 
@@ -170,6 +186,7 @@ def calculate_task_redundancy_rate(gen_tasks: list[str]) -> float:
         return 0.0
 
     # ========== 1. 批量向量化（和覆盖率/匹配度函数完全同口径） ==========
+    client = get_embedding_client()
     task_vectors = client.embed(gen_tasks, timeout=60.0)
     task_matrix = np.array(task_vectors, dtype=np.float32)
 
@@ -192,4 +209,3 @@ def calculate_task_redundancy_rate(gen_tasks: list[str]) -> float:
     redundancy_rate = float(np.mean(pairwise_sims))
 
     return round(redundancy_rate, 4)
-

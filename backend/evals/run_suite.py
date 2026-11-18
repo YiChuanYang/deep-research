@@ -34,6 +34,7 @@ def snapshot_code(directory: Path) -> dict[str, Any]:
     files = sorted(
         list((BACKEND_DIR / "src").rglob("*.py"))
         + list((BACKEND_DIR / "evals").glob("*.py"))
+        + list((BACKEND_DIR / "evals" / "nodes").rglob("*.py"))
         + [BACKEND_DIR / "pyproject.toml", BACKEND_DIR / "uv.lock"]
     )
     digest = hashlib.sha256()

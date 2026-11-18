@@ -1,77 +1,10 @@
-from __future__ import annotations
-import logging
-from typing import Any, Optional,List,Dict
-logger = logging.getLogger(__name__)
+"""模型输出的通用文本处理。"""
 
-CHARS_PER_TOKEN = 4
 
-def get_config_value(value:Any)->str:
-    """return the configure value as string"""""
-    #约定一定是字符串或者枚举
-    return value if isinstance(value,str) else value.value
-
-def strip_thinking_tokens(text:str)->str:
+def strip_thinking_tokens(text: str) -> str:
     """去掉模型返回中的思考部分"""
     while "<think>" in text and "</think>" in text:
         start = text.find("<think>")
         end = text.find("</think>") + len("</think>")
         text = text[:start] + text[end:]
     return text
-
-def deduplicate_and_format_sources(
-    sources:Dict[str,Any] | List[Dict[str,Any]],
-    max_tokens_per_source:int,
-    *,
-    fetch_full_page:bool=False,)->str:
-    """格式化搜索结果"""
-    if isinstance(sources,Dict):
-        sources_list = sources.get("results",[])
-    else:
-        sources_list = sources
-
-    unique_sources :dict[str,Dict[str,Any]] = {}
-    for source in sources_list:
-        url =source.get("url")
-        if not url:
-            continue
-        if url not in unique_sources:
-            unique_sources[url] = source
-
-    formatted_parts  = []
-    for source_index, source in enumerate(unique_sources.values(), start=1):
-        title = source.get("title") or source.get("url")
-        content = source.get("content") or ""
-        formatted_parts.append(f"信息来源:{title}\n\n")
-        formatted_parts.append(f"URL:{source.get('url')}\n\n")
-        formatted_parts.append(f"信息内容:{content}\n\n")
-
-        if fetch_full_page:
-            raw_content = source.get("raw_content")
-            if raw_content is None:
-                logger.debug(
-                    "🗂️ 搜索来源缺少全文，跳过：source_index=%d",
-                    source_index,
-                )
-                raw_content = ""
-            char_limit = max_tokens_per_source * CHARS_PER_TOKEN
-            if len(raw_content) > char_limit:
-                raw_content = f"{raw_content[:char_limit]}... [truncated]"
-            formatted_parts.append(
-                f"详细信息内容限制为 {max_tokens_per_source} 个 token: {raw_content}\n\n"
-            )
-
-    return "".join(formatted_parts).strip()
-
-
-def format_sources(search_results: Dict[str, Any] | None) -> str:
-    """Return bullet list summarising search sources."""
-
-    if not search_results:
-        return ""
-
-    results = search_results.get("results", [])
-    return "\n".join(
-        f"* {item.get('title', item.get('url', ''))} : {item.get('url', '')}"
-        for item in results
-        if item.get("url")
-    )

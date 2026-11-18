@@ -1,19 +1,20 @@
-"""组织研究笔记正文，并回填笔记关联。"""
+"""组织和持久化笔记；关联字段与任务状态由图提交。"""
 
 from __future__ import annotations
 
 import logging
-from deep_researcher.services.evidence_service import EvidenceService
+
 from deep_researcher.config import Configuration
 from deep_researcher.logging_config import log_operation
 from deep_researcher.models import SummaryState
+from deep_researcher.services.evidence_service import EvidenceService
 from deep_researcher.tools.note_tool import Note, NoteTool
 
 logger = logging.getLogger(__name__)
 
 
 class NoteService:
-    """保持三个业务入口，统一使用 read/save。"""
+    """保存任务和报告笔记；不推进研究状态。"""
 
     def __init__(
         self,
@@ -23,50 +24,7 @@ class NoteService:
         self._tool: NoteTool | None = None
 
         if config.enable_notes:
-            self._tool = (
-                note_tool
-                if note_tool is not None
-                else NoteTool(config)
-            )
-
-    @log_operation(
-        "读取任务笔记",
-        task_parameter="task_id",
-        state_parameter="state",
-    )
-    def load_task_note(
-        self,
-        state: SummaryState,
-        task_id: int,
-    ) -> str:
-        if self._tool is None:
-            logger.debug("笔记功能已关闭 · 跳过读取", extra={"event": "note_read_disabled"})
-            return ""
-
-        task = state.get_task(task_id)
-
-        note = self._tool.read(
-            run_id=state.run_id,
-            task_id=task_id,
-        )
-
-        if note is None:
-            if task.note_id:
-                logger.warning(
-                    "关联笔记缺失 · 将在保存时重建",
-                    extra={"event": "note_link_missing", "note_id": task.note_id},
-                )
-
-            return ""
-
-
-        logger.debug(
-            "已有笔记已读取 · %d 字",
-            len(note.content),
-            extra={"event": "task_note_loaded", "note_id": note.note_id, "content_chars": len(note.content)},
-        )
-
-        return note.content
+            self._tool = note_tool if note_tool is not None else NoteTool(config)
 
     @log_operation(
         "保存任务笔记",
@@ -78,17 +36,17 @@ class NoteService:
         self,
         state: SummaryState,
         task_id: int,
-    ) -> Note|None:
+    ) -> Note | None:
         if self._tool is None:
-            logger.debug("笔记功能已关闭 · 跳过保存", extra={"event": "note_save_disabled"})
+            logger.debug(
+                "笔记功能已关闭 · 跳过保存", extra={"event": "note_save_disabled"}
+            )
             return
 
         task = state.get_task(task_id)
 
         if not task.summary or not task.summary.strip():
-            raise ValueError(
-                f"任务 {task_id} 没有有效摘要"
-            )
+            raise ValueError(f"任务 {task_id} 没有有效摘要")
         references = EvidenceService().references(
             state,
             task.citation_ids,
@@ -127,25 +85,19 @@ class NoteService:
     def save_report_note(
         self,
         state: SummaryState,
-    ) -> Note|None:
+    ) -> Note | None:
         if self._tool is None:
-            logger.debug("笔记功能已关闭 · 跳过报告保存", extra={"event": "note_save_disabled"})
+            logger.debug(
+                "笔记功能已关闭 · 跳过报告保存", extra={"event": "note_save_disabled"}
+            )
             return None
 
-        if (
-            not state.structured_report
-            or not state.structured_report.strip()
-        ):
-            raise ValueError(
-                "报告正文为空，无法保存笔记"
-            )
+        if not state.structured_report or not state.structured_report.strip():
+            raise ValueError("报告正文为空，无法保存笔记")
 
         saved = self._tool.save(
             run_id=state.run_id,
-            title=(
-                f"研究报告："
-                f"{state.research_topic or '未命名主题'}"
-            ),
+            title=(f"研究报告：{state.research_topic or '未命名主题'}"),
             content=state.structured_report,
         )
 

@@ -131,7 +131,11 @@ class CitedText:
 
 @dataclass(kw_only=True)
 class EvidenceBatch:
-    """一次检索整理后的证据目录和本次选中的证据。"""
+    """服务的临时返回值，不是另一份研究状态。
+
+    sources/evidence 是已有目录与本次结果合并后的完整目录，不能只传增量。
+    evidence_ids 只包含当前任务选中的证据；图通过 accept_evidence 接收。
+    """
 
     sources: dict[str, Source]
     evidence: dict[str, Evidence]

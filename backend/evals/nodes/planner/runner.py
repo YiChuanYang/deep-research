@@ -1,18 +1,21 @@
-from evaluation import (
+import json
+from pathlib import Path
+
+import numpy as np
+
+from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
+from deep_researcher.config import Configuration
+from deep_researcher.llm.llm import MyLLM
+from deep_researcher.models import SummaryState
+from deep_researcher.prompts import todo_planner_system_prompt
+from deep_researcher.services.planner import PlanningService
+from evals.nodes.planner.evaluation import (
     caculate_dimension_cover_rate,
     calculate_task_redundancy_rate,
     calculate_task_semantic_match,
+    close_embedding_client,
 )
-from deep_researcher.llm.llm import MyLLM
-from deep_researcher.agents.tool_aware_agent import ToolAwareAgent
-from deep_researcher.models import SummaryState
-from deep_researcher.services.planner import PlanningService
-from deep_researcher.config import Configuration
-cfg = Configuration.from_env()
-from deep_researcher.prompts import todo_planner_system_prompt
-import json
-from pathlib import Path
-import numpy as np
+
 
 def call_planner(topic: str) -> list[str]:
     """
@@ -23,6 +26,7 @@ def call_planner(topic: str) -> list[str]:
     state = SummaryState(run_id="eval_test", research_topic=topic)
 
     # 构造规划 Agent（和 graph_nodes 中保持一致）
+    cfg = Configuration.from_env()
     llm = MyLLM(config=cfg)
     agent = ToolAwareAgent(
         name="Eval_Planner",
@@ -68,7 +72,7 @@ def evaluate_single_sample(sample: dict) -> dict:
 
     # ----- 计算各项指标 -----
     # 1. 维度覆盖率（核心，全面性）
-    cover_rate = caculate_dimension_cover_rate(expected_dims, gen_tasks,0.6)
+    cover_rate = caculate_dimension_cover_rate(expected_dims, gen_tasks, 0.6)
 
     # 2. 语义匹配度（拆分逻辑合理性）
     match_result = calculate_task_semantic_match(gold_task_titles, gen_tasks)
@@ -80,9 +84,7 @@ def evaluate_single_sample(sample: dict) -> dict:
     gen_count = len(gen_tasks)
     gold_count = len(gold_task_titles)
     count_deviation = (
-        abs(gen_count - gold_count) / gold_count
-        if gold_count > 0
-        else 0.0
+        abs(gen_count - gold_count) / gold_count if gold_count > 0 else 0.0
     )
 
     # ----- 综合得分（权重：覆盖50% + 匹配30% + 低冗余20%） -----
@@ -111,7 +113,6 @@ def evaluate_single_sample(sample: dict) -> dict:
     }
 
 
-
 def run(dataset_path: str | Path | None = None) -> list[dict]:
     """
     运行完整评测流水线
@@ -135,7 +136,9 @@ def run(dataset_path: str | Path | None = None) -> list[dict]:
     # ---------- 2. 逐条执行评测 ----------
     all_results = []
     for idx, sample in enumerate(dataset, 1):
-        print(f"[{idx:2d}/{total}] 评测中：{sample['sample_id']} - {sample['topic'][:45]}...")
+        print(
+            f"[{idx:2d}/{total}] 评测中：{sample['sample_id']} - {sample['topic'][:45]}..."
+        )
 
         result = evaluate_single_sample(sample)
         all_results.append(result)
@@ -172,7 +175,9 @@ def run(dataset_path: str | Path | None = None) -> list[dict]:
     # ---------- 4. 打印汇总报告 ----------
     print("\n" + "=" * 90)
     print("📊 规划节点评测汇总报告")
-    print(f"样本总数：{total}  |  成功：{len(success_list)}  |  失败：{len(failed_list)}")
+    print(
+        f"样本总数：{total}  |  成功：{len(success_list)}  |  失败：{len(failed_list)}"
+    )
     print("-" * 90)
     print(f"平均维度覆盖率：   {avg_cover:.2%}      （核心：全面性）")
     print(f"平均语义匹配度：   {avg_match:.4f}        （拆分逻辑合理性）")
@@ -199,6 +204,9 @@ def run(dataset_path: str | Path | None = None) -> list[dict]:
 
     return all_results
 
-if __name__ == '__main__':
-    run()
 
+if __name__ == "__main__":
+    try:
+        run()
+    finally:
+        close_embedding_client()

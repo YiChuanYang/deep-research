@@ -17,10 +17,8 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from deep_researcher.config import Configuration, get_config
 from deep_researcher.events import EventStore
 from deep_researcher.report_iteration import ReportIteration
-from deep_researcher.graph.graph_nodes import (
-    ResearchNodes,
-    build_graph,
-)
+from deep_researcher.graph.builder import build_graph
+from deep_researcher.graph.graph_nodes import ResearchNodes
 from deep_researcher.graph.graph_repository import GraphRunRepository,RunInfo
 from deep_researcher.graph.graph_state import (
     ResearchGraphState,
